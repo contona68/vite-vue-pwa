@@ -85,11 +85,13 @@ async function onSubmit() {
 }
 
 onMounted(() => {
+  document.documentElement.classList.add('login-no-scroll')
   window.addEventListener('online', syncOnlineStatus)
   window.addEventListener('offline', syncOnlineStatus)
 })
 
 onUnmounted(() => {
+  document.documentElement.classList.remove('login-no-scroll')
   window.removeEventListener('online', syncOnlineStatus)
   window.removeEventListener('offline', syncOnlineStatus)
 })
@@ -97,10 +99,12 @@ onUnmounted(() => {
 
 <style scoped>
 .login-page {
-  min-height: 100dvh;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
   display: grid;
   place-items: center;
-  padding: 1.5rem;
+  padding: 1rem;
   background:
     radial-gradient(ellipse at 20% 10%, rgba(56, 189, 248, 0.18), transparent 50%),
     radial-gradient(ellipse at 80% 90%, rgba(99, 102, 241, 0.16), transparent 45%),
@@ -109,7 +113,9 @@ onUnmounted(() => {
 
 .login-card {
   width: min(100%, 420px);
-  padding: 2rem 1.5rem;
+  max-height: calc(100dvh - 2rem);
+  overflow: hidden;
+  padding: 1.5rem 1.25rem;
   border-radius: 1.25rem;
   background: rgba(15, 23, 42, 0.72);
   border: 1px solid rgba(148, 163, 184, 0.25);
@@ -119,34 +125,36 @@ onUnmounted(() => {
 
 .brand {
   text-align: center;
-  margin-bottom: 1.75rem;
+  margin-bottom: 1.25rem;
 }
 
 .brand img {
+  width: 56px;
+  height: 56px;
   border-radius: 1rem;
-  margin-bottom: 0.85rem;
+  margin-bottom: 0.65rem;
 }
 
 .brand h1 {
   margin: 0;
-  font-size: 1.65rem;
+  font-size: 1.45rem;
   color: #f8fafc;
 }
 
 .subtitle {
-  margin: 0.5rem 0 0;
+  margin: 0.4rem 0 0;
   color: #94a3b8;
-  font-size: 0.92rem;
+  font-size: 0.88rem;
 }
 
 .login-form {
   display: grid;
-  gap: 1rem;
+  gap: 0.85rem;
 }
 
 .field {
   display: grid;
-  gap: 0.4rem;
+  gap: 0.35rem;
   color: #cbd5e1;
   font-size: 0.9rem;
 }
@@ -157,7 +165,7 @@ onUnmounted(() => {
   background: rgba(2, 6, 23, 0.55);
   color: #f8fafc;
   border-radius: 0.75rem;
-  padding: 0.8rem 0.9rem;
+  padding: 0.7rem 0.85rem;
   font: inherit;
   outline: none;
 }
@@ -170,7 +178,7 @@ onUnmounted(() => {
 .btn {
   border: 0;
   border-radius: 0.75rem;
-  padding: 0.85rem 1rem;
+  padding: 0.75rem 1rem;
   font: inherit;
   font-weight: 600;
   cursor: pointer;
@@ -193,9 +201,9 @@ onUnmounted(() => {
 }
 
 .offline-hint {
-  margin: 1.25rem 0 0;
+  margin: 1rem 0 0;
   text-align: center;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   color: #64748b;
 }
 

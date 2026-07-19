@@ -50,6 +50,13 @@ export default defineConfig({
         orientation: 'any',
         scope: './',
         start_url: './login',
+        prefer_related_applications: false,
+        related_applications: [
+          {
+            platform: 'webapp',
+            url: 'https://contona68.github.io/vite-vue-pwa/manifest.webmanifest',
+          },
+        ],
         icons: [
           {
             src: 'icons/android-chrome-192x192.png',

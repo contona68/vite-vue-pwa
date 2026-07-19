@@ -35,3 +35,11 @@ input {
 a {
   color: inherit;
 }
+
+html.login-no-scroll,
+html.login-no-scroll body,
+html.login-no-scroll #app {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}

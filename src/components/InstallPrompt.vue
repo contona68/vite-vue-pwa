@@ -18,76 +18,80 @@
 
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
+import {
+  incrementDismissLoadCount,
+  isPwaAlreadyInstalled,
+  markPwaInstalled,
+  setLoadsSinceDismiss,
+  shouldHideByDismissPolicy,
+} from '@/utils/pwaInstall'
 import { publicUrl } from '@/utils/publicUrl'
 
 const appIcon = publicUrl('icons/android-chrome-192x192.png')
-const STORAGE_KEY = 'pwa-install-loads-since-dismiss'
-const SHOW_EVERY_N_LOADS = 5
-
 const visible = ref(false)
 let deferredPrompt = null
+let alreadyInstalled = false
 
-function getLoadsSinceDismiss() {
-  const raw = localStorage.getItem(STORAGE_KEY)
-  if (raw === null) return null
-  const value = Number(raw)
-  return Number.isNaN(value) ? 0 : value
+function hideBanner() {
+  visible.value = false
 }
 
-function shouldHideByDismissPolicy() {
-  const loads = getLoadsSinceDismiss()
-  if (loads === null) return false
-  return loads < SHOW_EVERY_N_LOADS
-}
-
-function isStandaloneMode() {
-  return (
-    window.matchMedia('(display-mode: standalone)').matches ||
-    window.navigator.standalone === true
-  )
-}
-
-function onBeforeInstallPrompt(event) {
-  // برای حفظ آیکون نصب در نوار آدرس، رویداد را نگه می‌داریم
-  event.preventDefault()
-  deferredPrompt = event
-
-  if (isStandaloneMode() || shouldHideByDismissPolicy()) {
-    visible.value = false
+function tryShowBanner() {
+  if (alreadyInstalled || shouldHideByDismissPolicy() || !deferredPrompt) {
+    hideBanner()
     return
   }
-
   visible.value = true
 }
 
+function onBeforeInstallPrompt(event) {
+  event.preventDefault()
+  deferredPrompt = event
+
+  if (alreadyInstalled || shouldHideByDismissPolicy()) {
+    hideBanner()
+    return
+  }
+
+  tryShowBanner()
+}
+
 function onAppInstalled() {
-  visible.value = false
+  alreadyInstalled = true
+  markPwaInstalled()
   deferredPrompt = null
-  localStorage.removeItem(STORAGE_KEY)
+  hideBanner()
 }
 
 function dismiss() {
-  visible.value = false
-  localStorage.setItem(STORAGE_KEY, '0')
+  hideBanner()
+  setLoadsSinceDismiss(0)
 }
 
 async function install() {
   if (!deferredPrompt) return
 
   deferredPrompt.prompt()
-  await deferredPrompt.userChoice
+  const choice = await deferredPrompt.userChoice
   deferredPrompt = null
-  visible.value = false
-  localStorage.removeItem(STORAGE_KEY)
+  hideBanner()
+
+  if (choice?.outcome === 'accepted') {
+    alreadyInstalled = true
+    markPwaInstalled()
+  } else {
+    setLoadsSinceDismiss(0)
+  }
 }
 
-onMounted(() => {
-  if (isStandaloneMode()) return
-
-  const loads = getLoadsSinceDismiss()
-  if (loads !== null) {
-    localStorage.setItem(STORAGE_KEY, String(loads + 1))
+onMounted(async () => {
+  alreadyInstalled = await isPwaAlreadyInstalled()
+  if (alreadyInstalled) {
+    hideBanner()
+    return
   }
+
+  incrementDismissLoadCount()
 
   window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt)
   window.addEventListener('appinstalled', onAppInstalled)
