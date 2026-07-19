@@ -28,7 +28,7 @@ jobs:
           cache: npm
 
       - name: Install
-        run: npm ci
+        run: npm ci --registry=https://registry.npmjs.org/
 
       - name: Build for GitHub Pages
         run: npm run build:gh
