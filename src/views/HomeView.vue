@@ -17,8 +17,9 @@
 <script setup>
 import { computed } from 'vue'
 import AppNav from '@/components/AppNav.vue'
+import { getCurrentUser } from '@/utils/auth'
 
-const username = computed(() => sessionStorage.getItem('demo_user') || '')
+const username = computed(() => getCurrentUser())
 </script>
 
 <style scoped>

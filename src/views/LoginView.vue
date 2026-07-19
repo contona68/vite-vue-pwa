@@ -49,6 +49,7 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { login } from '@/utils/auth'
 import { publicUrl } from '@/utils/publicUrl'
 
 const appIcon = publicUrl('icons/android-chrome-192x192.png')
@@ -76,7 +77,7 @@ async function onSubmit() {
       return
     }
 
-    sessionStorage.setItem('demo_user', username.value)
+    login(username.value)
     await router.push({ name: 'home' })
   } finally {
     isSubmitting.value = false
