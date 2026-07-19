@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f29220" />
+    <meta name="description" content="نرم‌افزار حسابداری هایپریک با پشتیبانی PWA و دسترسی آفلاین به صفحه ورود" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="هایپریک" />
+    <meta name="msapplication-TileColor" content="#da532c" />
+    <meta name="msapplication-config" content="%BASE_URL%icons/browserconfig.xml" />
+    <link rel="icon" href="%BASE_URL%icons/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="%BASE_URL%icons/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="%BASE_URL%icons/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="%BASE_URL%icons/apple-touch-icon.png" />
+    <link rel="mask-icon" href="%BASE_URL%icons/safari-pinned-tab.svg" color="#f29220" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700&display=swap"
+      media="print"
+      onload="this.media='all'"
+    />
+    <noscript>
+      <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;600;700&display=swap" rel="stylesheet" />
+    </noscript>
+    <title>هایپریک</title>
+    <style>
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        display: grid;
+        place-items: center;
+        background: #ffffff;
+        color: #0f172a;
+        font-family: Vazirmatn, Tahoma, sans-serif;
+      }
+      #boot-splash img {
+        width: 96px;
+        height: 96px;
+        border-radius: 1.25rem;
+      }
+      #boot-splash p {
+        margin: 1rem 0 0;
+        font-weight: 600;
+      }
+      #boot-splash.hidden {
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s ease;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="boot-splash" aria-hidden="true">
+      <div style="text-align: center">
+        <img src="%BASE_URL%icons/android-chrome-192x192.png" alt="" width="96" height="96" />
+        <p>هایپریک</p>
+      </div>
+    </div>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+    <script>
+      window.addEventListener('load', function () {
+        var splash = document.getElementById('boot-splash')
+        if (!splash) return
+        setTimeout(function () {
+          splash.classList.add('hidden')
+          setTimeout(function () {
+            splash.remove()
+          }, 320)
+        }, 700)
+      })
+    </script>
+  </body>
+</html>
