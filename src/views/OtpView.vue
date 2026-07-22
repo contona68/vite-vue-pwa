@@ -61,7 +61,7 @@ import {
   markOtpVerified,
 } from '@/utils/auth'
 import { publicUrl } from '@/utils/publicUrl'
-import { isWebOtpSupported, waitForSmsOtp } from '@/utils/webOtp'
+import { isWebOtpSupported, normalizeOtpCode, waitForSmsOtp } from '@/utils/webOtp'
 
 const appIcon = publicUrl('icons/android-chrome-192x192.png')
 const demoCode = DEMO_OTP_CODE
@@ -70,11 +70,13 @@ const router = useRouter()
 const otpInputRef = ref(null)
 const otpCode = ref('')
 const errorMessage = ref('')
+const statusMessage = ref('')
 const isSubmitting = ref(false)
 const webOtpActive = ref(false)
 
 const username = computed(() => getCurrentUser())
 const hintMessage = computed(() => {
+  if (statusMessage.value) return statusMessage.value
   if (webOtpActive.value) {
     return 'در حال انتظار برای دریافت خودکار کد از پیامک (Android)...'
   }
@@ -86,10 +88,25 @@ const hintMessage = computed(() => {
 
 let otpAbortController = null
 
-function onOtpInput(event) {
-  const digits = String(event.target.value || '').replace(/\D/g, '').slice(0, 6)
+function applyOtpToInput(rawCode) {
+  const digits = normalizeOtpCode(rawCode, 6)
   otpCode.value = digits
   errorMessage.value = ''
+
+  const input = otpInputRef.value
+  if (input) {
+    input.value = digits
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  return digits
+}
+
+function onOtpInput(event) {
+  const digits = normalizeOtpCode(event.target.value || '', 6)
+  otpCode.value = digits
+  errorMessage.value = ''
+  statusMessage.value = ''
 
   if (digits.length === 6) {
     onSubmit()
@@ -98,7 +115,8 @@ function onOtpInput(event) {
 
 async function onSubmit() {
   errorMessage.value = ''
-  const code = otpCode.value.trim()
+  const code = normalizeOtpCode(otpCode.value, 6)
+  otpCode.value = code
 
   if (code.length !== 6) {
     errorMessage.value = 'کد باید ۶ رقم باشد.'
@@ -144,18 +162,29 @@ async function startWebOtpListener() {
   stopWebOtpListener()
   otpAbortController = new AbortController()
   webOtpActive.value = true
+  statusMessage.value = ''
 
   try {
-    const code = await waitForSmsOtp(otpAbortController.signal)
-    if (!code) return
+    const rawCode = await waitForSmsOtp(otpAbortController.signal)
+    if (rawCode == null) return
 
-    otpCode.value = String(code).replace(/\D/g, '').slice(0, 6)
-    if (otpCode.value.length === 6) {
+    const digits = applyOtpToInput(rawCode)
+    await nextTick()
+
+    if (!digits) {
+      statusMessage.value = 'پیامک دریافت شد ولی کد عددی از آن استخراج نشد.'
+      return
+    }
+
+    statusMessage.value = `کد از پیامک دریافت شد: ${digits}`
+
+    if (digits.length === 6) {
       await onSubmit()
     }
   } catch (error) {
     if (error?.name !== 'AbortError') {
       webOtpActive.value = false
+      console.warn('[WebOTP] failed:', error)
     }
   } finally {
     if (!otpAbortController?.signal.aborted) {
