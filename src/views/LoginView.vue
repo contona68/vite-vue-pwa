@@ -78,7 +78,7 @@ async function onSubmit() {
     }
 
     login(username.value)
-    await router.push({ name: 'home' })
+    await router.push({ name: 'otp' })
   } finally {
     isSubmitting.value = false
   }

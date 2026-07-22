@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { hasPendingLogin, isLoggedIn } from '@/utils/auth'
 
 const routes = [
   {
@@ -12,16 +13,22 @@ const routes = [
     meta: { title: 'ورود', public: true },
   },
   {
+    path: '/otp',
+    name: 'otp',
+    component: () => import('@/views/OtpView.vue'),
+    meta: { title: 'تأیید پیامکی', public: true },
+  },
+  {
     path: '/home',
     name: 'home',
     component: () => import('@/views/HomeView.vue'),
-    meta: { title: 'خانه' },
+    meta: { title: 'خانه', requiresAuth: true },
   },
   {
     path: '/about',
     name: 'about',
     component: () => import('@/views/AboutView.vue'),
-    meta: { title: 'درباره ما' },
+    meta: { title: 'درباره ما', requiresAuth: true },
   },
   {
     path: '/:pathMatch(.*)*',
@@ -35,6 +42,22 @@ const router = createRouter({
   scrollBehavior() {
     return { top: 0 }
   },
+})
+
+router.beforeEach((to) => {
+  if (to.meta.requiresAuth && !isLoggedIn()) {
+    return hasPendingLogin() ? { name: 'otp' } : { name: 'login' }
+  }
+
+  if (to.name === 'otp' && !hasPendingLogin()) {
+    return isLoggedIn() ? { name: 'home' } : { name: 'login' }
+  }
+
+  if (to.name === 'login' && isLoggedIn()) {
+    return { name: 'home' }
+  }
+
+  return true
 })
 
 router.afterEach((to) => {
