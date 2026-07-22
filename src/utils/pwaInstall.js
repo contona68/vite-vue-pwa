@@ -25,6 +25,22 @@ export function isStandaloneMode() {
   )
 }
 
+/** iPhone / iPad / iPod (شامل iPadOS که خود را Mac معرفی می‌کند) */
+export function isIosDevice() {
+  const ua = window.navigator.userAgent || ''
+  if (/iPad|iPhone|iPod/.test(ua)) return true
+  return window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1
+}
+
+/** Safari واقعی روی iOS (نه Chrome/Firefox داخل WebKit) */
+export function isIosSafari() {
+  if (!isIosDevice()) return false
+  const ua = window.navigator.userAgent || ''
+  const isWebkit = /WebKit/i.test(ua)
+  const isOtherBrowser = /CriOS|FxiOS|OPiOS|EdgiOS|DuckDuckGo|YaBrowser/i.test(ua)
+  return isWebkit && !isOtherBrowser
+}
+
 export function getLoadsSinceDismiss() {
   const raw = localStorage.getItem(DISMISS_LOADS_KEY)
   if (raw === null) return null

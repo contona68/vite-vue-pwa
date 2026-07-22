@@ -3,7 +3,6 @@
     <UpdatePrompt />
     <InstallPrompt v-if="!needRefresh" />
     <RouterView />
-
   </div>
 </template>
 
