@@ -107,6 +107,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   incrementDismissLoadCount,
+  isAndroidDevice,
   isIosDevice,
   isIosSafari,
   isPwaAlreadyInstalled,
@@ -116,13 +117,14 @@ import {
 } from '@/utils/pwaInstall'
 import { publicUrl } from '@/utils/publicUrl'
 
-/** اگر رویداد نصب نیامد، بعد از این مدت راهنمای دستی نشان داده می‌شود */
+/** فقط برای دسکتاپ بدون beforeinstallprompt؛ اندروید صبر می‌کند تا رویداد نصب بیاید */
 const MANUAL_GUIDE_DELAY_MS = 2500
 
 const appIcon = publicUrl('icons/android-chrome-192x192.png')
 const visible = ref(false)
 const isGuide = ref(false)
 const onIos = isIosDevice()
+const onAndroid = isAndroidDevice()
 const onIosSafari = isIosSafari()
 
 const needsSafariHint = computed(() => isGuide.value && onIos && !onIosSafari)
@@ -136,6 +138,7 @@ const guideIntro = computed(() =>
 
 let deferredPrompt = null
 let alreadyInstalled = false
+let nativeInstallReady = false
 let manualGuideTimer = null
 
 function canShowBanner() {
@@ -156,6 +159,8 @@ function showNativeInstallBanner() {
 }
 
 function showManualGuideBanner() {
+  // اگر نصب native در دسترس است/شده، هرگز راهنمای «دکمه ندارد» را نشان نده
+  if (nativeInstallReady || deferredPrompt) return
   if (!canShowBanner()) {
     hideBanner()
     return
@@ -173,6 +178,7 @@ function clearManualGuideTimer() {
 function onBeforeInstallPrompt(event) {
   event.preventDefault()
   deferredPrompt = event
+  nativeInstallReady = true
   clearManualGuideTimer()
 
   if (!canShowBanner()) {
@@ -225,16 +231,21 @@ onMounted(async () => {
   window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt)
   window.addEventListener('appinstalled', onAppInstalled)
 
-  // iOS: رویداد نصب ندارد → همان راهنمای Share
+  // iOS: رویداد نصب ندارد → راهنمای Share
   if (onIos) {
     showManualGuideBanner()
     return
   }
 
-  // بقیه پلتفرم‌ها: منتظر beforeinstallprompt؛ اگر نیامد → بنر راهنما
+  // اندروید: فقط بنر native؛ رویداد گاهی دیر می‌آید و تایمر اشتباه راهنما را نشان می‌داد
+  if (onAndroid) {
+    return
+  }
+
+  // دسکتاپ بدون beforeinstallprompt → بعد از تأخیر، راهنمای دستی
   manualGuideTimer = window.setTimeout(() => {
     manualGuideTimer = null
-    if (deferredPrompt || visible.value) return
+    if (nativeInstallReady || deferredPrompt || visible.value) return
     showManualGuideBanner()
   }, MANUAL_GUIDE_DELAY_MS)
 })

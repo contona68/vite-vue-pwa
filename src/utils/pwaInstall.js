@@ -25,6 +25,10 @@ export function isStandaloneMode() {
   )
 }
 
+export function isAndroidDevice() {
+  return /Android/i.test(window.navigator.userAgent || '')
+}
+
 /** iPhone / iPad / iPod (شامل iPadOS که خود را Mac معرفی می‌کند) */
 export function isIosDevice() {
   const ua = window.navigator.userAgent || ''
