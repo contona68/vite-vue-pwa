@@ -1,10 +1,48 @@
-import { isAndroidDevice, isIosDevice, isIosSafari } from '@/utils/device'
+import { getInstallSurface, isAndroidDevice, isIosDevice, isIosSafari } from '@/utils/device'
 
 const INSTALLED_KEY = 'pwa-app-installed'
 const DISMISS_LOADS_KEY = 'pwa-install-loads-since-dismiss'
 const SHOW_EVERY_N_LOADS = 5
 
-export { isAndroidDevice, isIosDevice, isIosSafari }
+export { getInstallSurface, isAndroidDevice, isIosDevice, isIosSafari }
+
+/** رویداد beforeinstallprompt که قبل از mount اپ ممکن است بیاید */
+let earlyDeferredPrompt = null
+let earlyCaptureBound = false
+
+/**
+ * باید قبل از هر await در bootstrap صدا زده شود؛
+ * روی موبایل BIP اغلب قبل از mount شدن Vue می‌آید و وگرنه از دست می‌رود.
+ */
+export function startEarlyBeforeInstallPromptCapture() {
+  if (typeof window === 'undefined' || earlyCaptureBound) return
+  earlyCaptureBound = true
+
+  window.addEventListener('beforeinstallprompt', onEarlyBeforeInstallPrompt)
+  window.addEventListener('appinstalled', onEarlyAppInstalled)
+}
+
+function onEarlyBeforeInstallPrompt(event) {
+  event.preventDefault()
+  earlyDeferredPrompt = event
+  clearPwaInstalledFlag()
+}
+
+function onEarlyAppInstalled() {
+  earlyDeferredPrompt = null
+  markPwaInstalled()
+}
+
+/** مصرف رویداد ذخیره‌شده؛ فقط یک‌بار */
+export function consumeEarlyDeferredPrompt() {
+  const event = earlyDeferredPrompt
+  earlyDeferredPrompt = null
+  return event
+}
+
+export function peekEarlyDeferredPrompt() {
+  return earlyDeferredPrompt
+}
 
 export function markPwaInstalled() {
   localStorage.setItem(INSTALLED_KEY, '1')
@@ -23,8 +61,6 @@ export function isStandaloneMode() {
   return (
     window.matchMedia('(display-mode: standalone)').matches ||
     window.matchMedia('(display-mode: fullscreen)').matches ||
-    window.matchMedia('(display-mode: minimal-ui)').matches ||
-    window.matchMedia('(display-mode: window-controls-overlay)').matches ||
     window.navigator.standalone === true ||
     document.referrer.includes('android-app://')
   )
@@ -53,15 +89,11 @@ export function incrementDismissLoadCount() {
   setLoadsSinceDismiss(loads + 1)
 }
 
-function isRelatedWebAppInstalled(relatedApps) {
-  if (!Array.isArray(relatedApps) || relatedApps.length === 0) return false
-  return relatedApps.some((app) => !app.platform || app.platform === 'webapp')
-}
-
 /**
- * آیا PWA از قبل روی دستگاه نصب است؟
- * iOS: فقط حالت standalone (فلگ localStorage در Safari گمراه‌کننده است)
- * اندروید/دسکتاپ: standalone + getInstalledRelatedApps + فلگ محلی
+ * آیا PWA از قبل نصب است؟
+ * - standalone / iOS Home Screen → بله
+ * - اگر BIP از قبل آمده → قطعاً نصب نیست
+ * - فلگ محلی فقط وقتی API related-apps نیست (fallback ضعیف)
  */
 export async function isPwaAlreadyInstalled() {
   if (isStandaloneMode()) {
@@ -69,7 +101,13 @@ export async function isPwaAlreadyInstalled() {
     return true
   }
 
-  // روی iOS نصب یعنی از Home Screen باز شده؛ در تب مرورگر همیشه قابل‌نصب است
+  // BIP یعنی مرورگر هنوز نصب را پیشنهاد می‌دهد
+  if (earlyDeferredPrompt) {
+    clearPwaInstalledFlag()
+    return false
+  }
+
+  // iOS در تب مرورگر: فقط راهنما؛ فلگ localStorage گمراه‌کننده است
   if (isIosDevice()) {
     return false
   }
@@ -77,7 +115,10 @@ export async function isPwaAlreadyInstalled() {
   if ('getInstalledRelatedApps' in navigator) {
     try {
       const relatedApps = await navigator.getInstalledRelatedApps()
-      if (isRelatedWebAppInstalled(relatedApps)) {
+      const installed = Array.isArray(relatedApps)
+        ? relatedApps.some((app) => app?.platform === 'webapp')
+        : false
+      if (installed) {
         markPwaInstalled()
         return true
       }
@@ -86,7 +127,7 @@ export async function isPwaAlreadyInstalled() {
       }
       return false
     } catch (_) {
-      // پشتیبانی ناقص — به فلگ محلی برمی‌گردیم
+      // پشتیبانی ناقص
     }
   }
 

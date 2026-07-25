@@ -38,7 +38,8 @@ export default defineConfig({
         'icons/browserconfig.xml',
       ],
       manifest: {
-        id: './login',
+        // id و start_url هم‌راستا باشند تا Chrome هویت نصب را اشتباه نگیرد
+        id: './',
         name: 'نرم‌افزار حسابداری هایپریک',
         short_name: 'هایپریک',
         description:
@@ -52,14 +53,6 @@ export default defineConfig({
         scope: './',
         start_url: './',
         prefer_related_applications: false,
-        // برای تشخیص نصب روی موبایل و دسکتاپ (getInstalledRelatedApps)
-        related_applications: [
-          {
-            platform: 'webapp',
-            url: 'manifest.webmanifest',
-            id: './login',
-          },
-        ],
         icons: [
           {
             src: 'icons/android-chrome-192x192.png',

@@ -9,14 +9,14 @@
     >
       <img class="app-icon" :src="appIcon" alt="" width="48" height="48" />
 
-      <!-- راهنمای دستی (iOS یا مرورگرهایی بدون beforeinstallprompt) -->
+      <!-- راهنمای دستی: فقط iOS (یا دسکتاپ بدون BIP) -->
       <template v-if="isGuide">
         <div class="text">
           <strong :id="bannerTitleId">{{ guideTitle }}</strong>
           <p v-if="needsSafariHint">{{ pwaUi.iosNeedsSafari }}</p>
           <p v-else>{{ guideIntro }}</p>
 
-          <ol v-if="onIos" class="guide-steps" aria-label="مراحل نصب">
+          <ol v-if="surface === 'ios'" class="guide-steps" aria-label="مراحل نصب">
             <li>
               <span class="step-badge" aria-hidden="true">
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
@@ -82,9 +82,10 @@
           <button type="button" class="btn primary" @click="dismiss">{{ pwaUi.guideConfirm }}</button>
         </div>
 
-        <div v-if="onIos" class="ios-pointer" aria-hidden="true" />
+        <div v-if="surface === 'ios'" class="ios-pointer" aria-hidden="true" />
       </template>
 
+      <!-- بنر native: اندروید / کروم دسکتاپ با beforeinstallprompt -->
       <template v-else>
         <div class="text">
           <strong id="install-title">{{ pwaUi.installTitle }}</strong>
@@ -104,9 +105,9 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   clearPwaInstalledFlag,
+  consumeEarlyDeferredPrompt,
+  getInstallSurface,
   incrementDismissLoadCount,
-  isAndroidDevice,
-  isIosDevice,
   isIosSafari,
   isPwaAlreadyInstalled,
   isStandaloneMode,
@@ -118,21 +119,26 @@ import { APP_ICON_192 } from '@/utils/publicUrl'
 import { appConfig } from '@/services/appConfig.service'
 import { needRefresh } from '@/pwa/updateState'
 
-/** دسکتاپ / اندروید بدون BIP: راهنمای دستی بعد از این تأخیر */
-const MANUAL_GUIDE_DELAY_MS = 3500
+/** فقط دسکتاپ بدون BIP */
+const MANUAL_GUIDE_DELAY_MS = 2500
 
 const appIcon = APP_ICON_192
 const visible = ref(false)
 const isGuide = ref(false)
-const onIos = isIosDevice()
-const onAndroid = isAndroidDevice()
+
+/** 'android' | 'ios' | 'desktop' — یک‌بار در setup، متنافی‌الاجمع */
+const surface = getInstallSurface()
 const onIosSafari = isIosSafari()
 
 const pwaUi = computed(() => appConfig.value.pwaUi)
-const needsSafariHint = computed(() => isGuide.value && onIos && !onIosSafari)
+const needsSafariHint = computed(() => isGuide.value && surface === 'ios' && !onIosSafari)
 const bannerTitleId = computed(() => (isGuide.value ? 'guide-install-title' : 'install-title'))
-const guideTitle = computed(() => (onIos ? pwaUi.value.iosGuideTitle : pwaUi.value.manualGuideTitle))
-const guideIntro = computed(() => (onIos ? pwaUi.value.iosGuideIntro : pwaUi.value.manualGuideIntro))
+const guideTitle = computed(() =>
+  surface === 'ios' ? pwaUi.value.iosGuideTitle : pwaUi.value.manualGuideTitle,
+)
+const guideIntro = computed(() =>
+  surface === 'ios' ? pwaUi.value.iosGuideIntro : pwaUi.value.manualGuideIntro,
+)
 
 let deferredPrompt = null
 let alreadyInstalled = false
@@ -140,8 +146,10 @@ let nativeInstallReady = false
 let manualGuideTimer = null
 let listenersBound = false
 
+const standaloneMedia = window.matchMedia('(display-mode: standalone)')
+const fullscreenMedia = window.matchMedia('(display-mode: fullscreen)')
+
 function canShowBanner() {
-  // بنر آپدیت اولویت دارد؛ رویداد نصب را نگه می‌داریم تا بعد از بستن آپدیت نشان دهیم
   return !alreadyInstalled && !shouldHideByDismissPolicy() && !needRefresh.value
 }
 
@@ -169,7 +177,8 @@ function showNativeInstallBanner() {
 }
 
 async function showManualGuideBanner() {
-  // اگر نصب native در دسترس است/شده، هرگز راهنمای «دکمه ندارد» را نشان نده
+  // اندروید هرگز راهنمای دستی نمی‌بیند
+  if (surface === 'android') return
   if (nativeInstallReady || deferredPrompt) return
   if (await refreshInstalledState()) return
   if (!canShowBanner()) {
@@ -186,7 +195,8 @@ function clearManualGuideTimer() {
   manualGuideTimer = null
 }
 
-function scheduleManualGuideFallback() {
+function scheduleDesktopManualGuideFallback() {
+  if (surface !== 'desktop') return
   clearManualGuideTimer()
   manualGuideTimer = window.setTimeout(() => {
     manualGuideTimer = null
@@ -195,23 +205,24 @@ function scheduleManualGuideFallback() {
   }, MANUAL_GUIDE_DELAY_MS)
 }
 
-async function onBeforeInstallPrompt(event) {
-  event.preventDefault()
-
-  // خود رویداد یعنی مرورگر نصب را ممکن می‌داند → فلگ کهنه را پاک کن
+function applyDeferredPrompt(event) {
+  if (!event) return false
   clearPwaInstalledFlag()
   alreadyInstalled = false
-
   deferredPrompt = event
   nativeInstallReady = true
   clearManualGuideTimer()
-
   if (!canShowBanner()) {
     hideBanner()
-    return
+    return true
   }
-
   showNativeInstallBanner()
+  return true
+}
+
+function onBeforeInstallPrompt(event) {
+  event.preventDefault()
+  applyDeferredPrompt(event)
 }
 
 function onAppInstalled() {
@@ -257,7 +268,7 @@ async function restoreBannerAfterUpdate() {
     showNativeInstallBanner()
     return
   }
-  if (onIos) {
+  if (surface === 'ios') {
     await showManualGuideBanner()
   }
 }
@@ -269,7 +280,6 @@ function bindInstallListeners() {
   window.addEventListener('appinstalled', onAppInstalled)
   standaloneMedia.addEventListener('change', onDisplayModeChange)
   fullscreenMedia.addEventListener('change', onDisplayModeChange)
-  minimalUiMedia.addEventListener('change', onDisplayModeChange)
 }
 
 function unbindInstallListeners() {
@@ -279,12 +289,7 @@ function unbindInstallListeners() {
   window.removeEventListener('appinstalled', onAppInstalled)
   standaloneMedia.removeEventListener('change', onDisplayModeChange)
   fullscreenMedia.removeEventListener('change', onDisplayModeChange)
-  minimalUiMedia.removeEventListener('change', onDisplayModeChange)
 }
-
-const standaloneMedia = window.matchMedia('(display-mode: standalone)')
-const fullscreenMedia = window.matchMedia('(display-mode: fullscreen)')
-const minimalUiMedia = window.matchMedia('(display-mode: minimal-ui)')
 
 watch(needRefresh, (updating) => {
   if (updating) {
@@ -295,21 +300,32 @@ watch(needRefresh, (updating) => {
 })
 
 onMounted(async () => {
-  // اول listener — روی موبایل BIP زود می‌آید و با await از دست می‌رود
   bindInstallListeners()
 
-  if (await refreshInstalledState()) return
+  // رویدادی که موقع awaitهای bootstrap آمده بود
+  applyDeferredPrompt(consumeEarlyDeferredPrompt())
+
+  // اگر BIP داریم، مرورگر هنوز نصب را ممکن می‌داند → نصب‌شده حساب نکن
+  if (!deferredPrompt && (await refreshInstalledState())) return
 
   incrementDismissLoadCount()
 
-  // iOS: رویداد نصب ندارد → راهنمای Share
-  if (onIos) {
+  if (deferredPrompt) {
+    showNativeInstallBanner()
+    return
+  }
+
+  if (surface === 'ios') {
     await showManualGuideBanner()
     return
   }
 
-  // اندروید و دسکتاپ: صبر برای BIP؛ اگر نیامد راهنمای دستی
-  scheduleManualGuideFallback()
+  if (surface === 'android') {
+    // فقط بنر native با دکمه نصب؛ بدون راهنمای Share/iOS
+    return
+  }
+
+  scheduleDesktopManualGuideFallback()
 })
 
 onUnmounted(() => {
