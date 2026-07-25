@@ -1,41 +1,102 @@
-const AUTH_STORAGE_KEY = 'demo_user'
-const OTP_VERIFIED_KEY = 'demo_otp_verified'
+/**
+ * نشست و توکن احراز هویت
+ * توکن پایدار در localStorage؛ باز بودن قفل اپ در sessionStorage
+ */
 
-/** کد دمو برای تست تا API واقعی وصل شود */
+const TOKEN_KEY = 'auth_access_token'
+const TOKEN_META_KEY = 'auth_token_meta'
+const PENDING_USER_KEY = 'auth_pending_user'
+const SESSION_UNLOCKED_KEY = 'auth_session_unlocked'
+
+/** کد دمو OTP */
 export const DEMO_OTP_CODE = '123456'
 
-export function getCurrentUser() {
-  return sessionStorage.getItem(AUTH_STORAGE_KEY) || ''
+export function getAccessToken() {
+  return localStorage.getItem(TOKEN_KEY) || ''
 }
 
-export function isOtpVerified() {
-  return sessionStorage.getItem(OTP_VERIFIED_KEY) === '1'
+export function getTokenUsername() {
+  try {
+    const raw = localStorage.getItem(TOKEN_META_KEY)
+    if (!raw) return ''
+    return JSON.parse(raw)?.username || ''
+  } catch (_) {
+    return ''
+  }
 }
 
+export function getTokenMeta() {
+  try {
+    const raw = localStorage.getItem(TOKEN_META_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch (_) {
+    return null
+  }
+}
+
+export function hasStoredToken() {
+  return Boolean(getAccessToken())
+}
+
+export function persistTokenSession({ accessToken, username, expiresAt }) {
+  localStorage.setItem(TOKEN_KEY, accessToken)
+  localStorage.setItem(
+    TOKEN_META_KEY,
+    JSON.stringify({
+      username,
+      expiresAt,
+      savedAt: Date.now(),
+    }),
+  )
+  sessionStorage.removeItem(PENDING_USER_KEY)
+}
+
+export function clearTokenSession() {
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(TOKEN_META_KEY)
+}
+
+export function isSessionUnlocked() {
+  return sessionStorage.getItem(SESSION_UNLOCKED_KEY) === '1'
+}
+
+export function markSessionUnlocked() {
+  sessionStorage.setItem(SESSION_UNLOCKED_KEY, '1')
+}
+
+export function clearSessionUnlock() {
+  sessionStorage.removeItem(SESSION_UNLOCKED_KEY)
+}
+
+/** کاربر لاگین کامل این نشست (توکن + آنلاک) */
 export function isLoggedIn() {
-  return Boolean(getCurrentUser()) && isOtpVerified()
+  return hasStoredToken() && isSessionUnlocked()
+}
+
+export function getCurrentUser() {
+  return getTokenUsername() || sessionStorage.getItem(PENDING_USER_KEY) || ''
 }
 
 export function hasPendingLogin() {
-  return Boolean(getCurrentUser()) && !isOtpVerified()
+  return Boolean(sessionStorage.getItem(PENDING_USER_KEY)) && !hasStoredToken()
 }
 
-export function login(username) {
-  sessionStorage.setItem(AUTH_STORAGE_KEY, username)
-  sessionStorage.removeItem(OTP_VERIFIED_KEY)
+/** بعد از یوزر/پسورد — هنوز OTP */
+export function beginPendingLogin(username) {
+  sessionStorage.setItem(PENDING_USER_KEY, username)
+  clearSessionUnlock()
 }
 
-export function markOtpVerified() {
-  sessionStorage.setItem(OTP_VERIFIED_KEY, '1')
+export function getPendingUser() {
+  return sessionStorage.getItem(PENDING_USER_KEY) || ''
 }
 
-/** ورود کامل (مثلاً بعد از WebAuthn موفق) — بدون OTP مجدد */
-export function completeLogin(username) {
-  sessionStorage.setItem(AUTH_STORAGE_KEY, username)
-  sessionStorage.setItem(OTP_VERIFIED_KEY, '1')
+export function clearPendingLogin() {
+  sessionStorage.removeItem(PENDING_USER_KEY)
 }
 
 export function logout() {
-  sessionStorage.removeItem(AUTH_STORAGE_KEY)
-  sessionStorage.removeItem(OTP_VERIFIED_KEY)
+  clearTokenSession()
+  clearPendingLogin()
+  clearSessionUnlock()
 }

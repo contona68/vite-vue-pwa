@@ -49,17 +49,19 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { apiHasCredentials } from '@/api/webAuthnApi'
+import { apiIssueToken } from '@/api/authApi'
 import {
   DEMO_OTP_CODE,
-  getCurrentUser,
+  clearPendingLogin,
+  getPendingUser,
   hasPendingLogin,
   isLoggedIn,
   logout,
-  markOtpVerified,
+  markSessionUnlocked,
+  persistTokenSession,
 } from '@/utils/auth'
+import { isAppLockEnabled, isAppLockSupported } from '@/utils/appLock'
 import { publicUrl } from '@/utils/publicUrl'
-import { isWebAuthnSupported } from '@/utils/webAuthn'
 import { isWebOtpSupported, normalizeOtpCode, waitForSmsOtp } from '@/utils/webOtp'
 
 const appIcon = publicUrl('icons/android-chrome-192x192.png')
@@ -69,17 +71,14 @@ const otpDigits = ref(['', '', '', '', '', ''])
 const otpInputRefs = ref([])
 const errorMessage = ref('')
 const isSubmitting = ref(false)
-const webOtpActive = ref(false)
 
-const username = computed(() => getCurrentUser())
+const username = computed(() => getPendingUser())
 const otpCode = computed(() => otpDigits.value.join(''))
 
 let otpAbortController = null
 
 function setOtpRef(el, index) {
-  if (el) {
-    otpInputRefs.value[index] = el
-  }
+  if (el) otpInputRefs.value[index] = el
 }
 
 function focusBox(index) {
@@ -93,9 +92,7 @@ function focusBox(index) {
 function applyOtpToBoxes(rawCode) {
   const digits = normalizeOtpCode(rawCode, 6).split('')
   const next = ['', '', '', '', '', '']
-  for (let i = 0; i < 6; i += 1) {
-    next[i] = digits[i] || ''
-  }
+  for (let i = 0; i < 6; i += 1) next[i] = digits[i] || ''
   otpDigits.value = next
   errorMessage.value = ''
   return next.join('')
@@ -107,11 +104,8 @@ function onDigitInput(index, event) {
 
   if (normalized.length > 1) {
     applyOtpToBoxes(normalized)
-    if (normalized.length >= 6) {
-      onSubmit()
-    } else {
-      focusBox(Math.min(normalized.length, 5))
-    }
+    if (normalized.length >= 6) onSubmit()
+    else focusBox(Math.min(normalized.length, 5))
     return
   }
 
@@ -122,13 +116,8 @@ function onDigitInput(index, event) {
   errorMessage.value = ''
   event.target.value = digit
 
-  if (digit && index < 5) {
-    focusBox(index + 1)
-  }
-
-  if (next.join('').length === 6) {
-    onSubmit()
-  }
+  if (digit && index < 5) focusBox(index + 1)
+  if (next.join('').length === 6) onSubmit()
 }
 
 function onDigitKeydown(index, event) {
@@ -147,12 +136,10 @@ function onDigitKeydown(index, event) {
       focusBox(index - 1)
     }
   }
-
   if (event.key === 'ArrowLeft' && index > 0) {
     event.preventDefault()
     focusBox(index - 1)
   }
-
   if (event.key === 'ArrowRight' && index < 5) {
     event.preventDefault()
     focusBox(index + 1)
@@ -161,34 +148,17 @@ function onDigitKeydown(index, event) {
 
 function onOtpPaste(event) {
   event.preventDefault()
-  const text = event.clipboardData?.getData('text') || ''
-  const code = applyOtpToBoxes(text)
-  if (code.length === 6) {
-    onSubmit()
-  } else if (code.length > 0) {
-    focusBox(Math.min(code.length, 5))
-  }
+  const code = applyOtpToBoxes(event.clipboardData?.getData('text') || '')
+  if (code.length === 6) onSubmit()
+  else if (code.length > 0) focusBox(Math.min(code.length, 5))
 }
 
-async function goNextAfterOtp() {
-  const user = getCurrentUser()
-
-  if (!isWebAuthnSupported() || !user) {
-    await router.replace({ name: 'home' })
+async function goNextAfterToken(usernameValue) {
+  if (isAppLockSupported() && !isAppLockEnabled(usernameValue)) {
+    await router.replace({ name: 'biometric-enroll' })
     return
   }
-
-  try {
-    const already = await apiHasCredentials(user)
-    if (already) {
-      await router.replace({ name: 'home' })
-      return
-    }
-  } catch (_) {
-    // ignore
-  }
-
-  await router.replace({ name: 'biometric-enroll' })
+  await router.replace({ name: 'home' })
 }
 
 async function onSubmit() {
@@ -204,16 +174,36 @@ async function onSubmit() {
   isSubmitting.value = true
 
   try {
-    await new Promise((resolve) => setTimeout(resolve, 300))
-
     if (code !== DEMO_OTP_CODE) {
       errorMessage.value = 'کد واردشده نادرست است.'
       return
     }
 
+    const pendingUser = getPendingUser()
+    if (!pendingUser) {
+      errorMessage.value = 'نشست ورود منقضی شده است.'
+      await router.replace({ name: 'login' })
+      return
+    }
+
     stopWebOtpListener()
-    markOtpVerified()
-    await goNextAfterOtp()
+
+    const tokenResponse = await apiIssueToken({
+      username: pendingUser,
+      otpCode: code,
+    })
+
+    persistTokenSession({
+      accessToken: tokenResponse.accessToken,
+      username: tokenResponse.username,
+      expiresAt: tokenResponse.expiresAt,
+    })
+    clearPendingLogin()
+    markSessionUnlocked()
+
+    await goNextAfterToken(tokenResponse.username)
+  } catch (error) {
+    errorMessage.value = error?.message || 'صدور توکن ناموفق بود.'
   } finally {
     isSubmitting.value = false
   }
@@ -226,7 +216,6 @@ async function goBackToLogin() {
 }
 
 function stopWebOtpListener() {
-  webOtpActive.value = false
   if (otpAbortController) {
     otpAbortController.abort()
     otpAbortController = null
@@ -235,30 +224,17 @@ function stopWebOtpListener() {
 
 async function startWebOtpListener() {
   if (!isWebOtpSupported()) return
-
   stopWebOtpListener()
   otpAbortController = new AbortController()
-  webOtpActive.value = true
 
   try {
     const rawCode = await waitForSmsOtp(otpAbortController.signal)
     if (rawCode == null) return
-
     const digits = applyOtpToBoxes(rawCode)
     await nextTick()
-
-    if (digits.length === 6) {
-      await onSubmit()
-    }
+    if (digits.length === 6) await onSubmit()
   } catch (error) {
-    if (error?.name !== 'AbortError') {
-      webOtpActive.value = false
-      console.warn('[WebOTP] failed:', error)
-    }
-  } finally {
-    if (!otpAbortController?.signal.aborted) {
-      webOtpActive.value = false
-    }
+    if (error?.name !== 'AbortError') console.warn('[WebOTP] failed:', error)
   }
 }
 
@@ -267,7 +243,6 @@ onMounted(async () => {
     await router.replace({ name: 'home' })
     return
   }
-
   if (!hasPendingLogin()) {
     await router.replace({ name: 'login' })
     return
@@ -288,8 +263,6 @@ onUnmounted(() => {
 <style scoped>
 .login-page {
   height: 100dvh;
-  max-height: 100dvh;
-  overflow: hidden;
   display: grid;
   place-items: center;
   padding: 1rem;
@@ -301,14 +274,10 @@ onUnmounted(() => {
 
 .login-card {
   width: min(100%, 420px);
-  max-height: calc(100dvh - 2rem);
-  overflow: hidden;
   padding: 1.5rem 1.25rem;
   border-radius: 1.25rem;
   background: rgba(15, 23, 42, 0.72);
   border: 1px solid rgba(148, 163, 184, 0.25);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
 }
 
 .brand {

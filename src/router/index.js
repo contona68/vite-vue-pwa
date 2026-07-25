@@ -1,10 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import { hasPendingLogin, isLoggedIn } from '@/utils/auth'
+import { hasPendingLogin, hasStoredToken, isLoggedIn, isSessionUnlocked } from '@/utils/auth'
+import { isAppLockEnabled, getAppLockUsername } from '@/utils/appLock'
 
 const routes = [
   {
     path: '/',
-    redirect: '/login',
+    name: 'boot',
+    component: () => import('@/views/BootView.vue'),
+    meta: { title: 'بارگذاری', public: true },
   },
   {
     path: '/login',
@@ -17,6 +20,12 @@ const routes = [
     name: 'otp',
     component: () => import('@/views/OtpView.vue'),
     meta: { title: 'تأیید پیامکی', public: true },
+  },
+  {
+    path: '/biometric-unlock',
+    name: 'biometric-unlock',
+    component: () => import('@/views/BiometricUnlockView.vue'),
+    meta: { title: 'باز کردن برنامه', public: true },
   },
   {
     path: '/biometric-enroll',
@@ -38,7 +47,7 @@ const routes = [
   },
   {
     path: '/:pathMatch(.*)*',
-    redirect: '/login',
+    redirect: '/',
   },
 ]
 
@@ -51,8 +60,17 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
+  if (to.name === 'boot') return true
+
   if (to.meta.requiresAuth && !isLoggedIn()) {
-    return hasPendingLogin() ? { name: 'otp' } : { name: 'login' }
+    if (hasPendingLogin()) return { name: 'otp' }
+    if (hasStoredToken() && isAppLockEnabled(getAppLockUsername()) && !isSessionUnlocked()) {
+      return { name: 'biometric-unlock' }
+    }
+    if (hasStoredToken() && !isSessionUnlocked()) {
+      return { name: 'boot' }
+    }
+    return { name: 'login' }
   }
 
   if (to.name === 'otp' && !hasPendingLogin()) {
@@ -63,8 +81,10 @@ router.beforeEach((to) => {
     return { name: 'home' }
   }
 
-  // صفحه فعال‌سازی فقط برای کاربر لاگین‌شده بدون Passkey قبلی معنا دارد
-  // (خودِ صفحه هم در صورت داشتن credential به home می‌فرستد)
+  if (to.name === 'biometric-unlock') {
+    if (!hasStoredToken()) return { name: 'login' }
+    if (isLoggedIn()) return { name: 'home' }
+  }
 
   return true
 })

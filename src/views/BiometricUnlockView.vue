@@ -1,22 +1,22 @@
 <template>
   <main class="page login-page">
-    <section class="login-card" aria-labelledby="enroll-title">
+    <section class="login-card" aria-labelledby="unlock-title">
       <div class="brand">
         <img :src="appIcon" alt="لوگوی اپ" width="56" height="56" />
-        <h1 id="enroll-title">فعال‌سازی قفل اثرانگشت</h1>
+        <h1 id="unlock-title">باز کردن برنامه</h1>
         <p class="subtitle">
-          با فعال‌سازی ورود با اثر انگشت می‌توانید دفعات بعد بدون وارد کردن نام کاربری و رمز عبور و تأیید دومرحله‌ای وارد شوید.
-          اثرانگشت فقط قفل محلی برنامه است و به سرور ارسال نمی‌شود.
+          برای ادامه، هویت خود را با اثر انگشت تأیید کنید.
+          سپس نشست شما با توکن ذخیره‌شده بررسی می‌شود.
         </p>
       </div>
 
       <div class="fingerprint-wrap">
         <button
-          v-if="!isEnrolling"
+          v-if="!isBusy"
           type="button"
           class="fingerprint-btn"
-          aria-label="فعال‌سازی اثرانگشت"
-          @click="enrollBiometric"
+          aria-label="باز کردن با اثرانگشت"
+          @click="onUnlock"
         >
           <svg viewBox="0 0 24 24" width="56" height="56" aria-hidden="true" fill="none">
             <path
@@ -30,14 +30,14 @@
 
         <div v-else class="loading-wrap" aria-live="polite">
           <div class="spinner" aria-hidden="true" />
-          <p class="loading-text">در حال فعال‌سازی...</p>
+          <p class="loading-text">{{ statusText }}</p>
         </div>
       </div>
 
-      <p v-if="enrollError" class="error" role="alert">{{ enrollError }}</p>
+      <p v-if="errorMessage" class="error" role="alert">{{ errorMessage }}</p>
 
-      <button type="button" class="skip-link" :disabled="isEnrolling" @click="skipEnroll">
-        فعلاً نه
+      <button type="button" class="skip-link" :disabled="isBusy" @click="goToPasswordLogin">
+        ورود با نام کاربری و رمز
       </button>
     </section>
   </main>
@@ -46,64 +46,70 @@
 <script setup>
 import { onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { enableAppLock, isAppLockEnabled, isAppLockSupported } from '@/utils/appLock'
-import { getTokenUsername, isLoggedIn } from '@/utils/auth'
+import { apiValidateToken } from '@/api/authApi'
+import { unlockWithBiometric } from '@/utils/appLock'
+import {
+  clearTokenSession,
+  getAccessToken,
+  hasStoredToken,
+  markSessionUnlocked,
+} from '@/utils/auth'
 import { publicUrl } from '@/utils/publicUrl'
 
 const appIcon = publicUrl('icons/android-chrome-192x192.png')
 const router = useRouter()
-const isEnrolling = ref(false)
-const enrollError = ref('')
+const isBusy = ref(false)
+const statusText = ref('در حال ارتباط با حسگر...')
+const errorMessage = ref('')
 
-async function goHome() {
-  await router.replace({ name: 'home' })
+async function goToPasswordLogin() {
+  clearTokenSession()
+  await router.replace({ name: 'login' })
 }
 
-async function skipEnroll() {
-  await goHome()
-}
-
-function enrollBiometric() {
-  enrollError.value = ''
-  const username = getTokenUsername()
-  if (!username) {
-    enrollError.value = 'نشست کاربر یافت نشد.'
+function onUnlock() {
+  errorMessage.value = ''
+  const token = getAccessToken()
+  if (!token) {
+    goToPasswordLogin()
     return
   }
 
-  const enablePromise = enableAppLock(username)
-  isEnrolling.value = true
+  // فوراً biometric را شروع کن تا user-gesture حفظ شود
+  const unlockPromise = unlockWithBiometric()
+  isBusy.value = true
+  statusText.value = 'انگشت خود را روی حسگر قرار دهید...'
 
-  enablePromise
-    .then(() => goHome())
+  unlockPromise
+    .then(async () => {
+      statusText.value = 'در حال بررسی نشست...'
+      const result = await apiValidateToken(token)
+      if (!result.ok) {
+        clearTokenSession()
+        errorMessage.value = 'نشست منقضی شده است. دوباره وارد شوید.'
+        await router.replace({ name: 'login' })
+        return
+      }
+      markSessionUnlocked()
+      await router.replace({ name: 'home' })
+    })
     .catch((error) => {
-      console.warn('[AppLock] enable failed:', error)
+      console.warn('[AppLock] unlock failed:', error)
       if (error?.name === 'NotAllowedError') {
-        enrollError.value = 'فعال‌سازی انجام نشد. دوباره روی اثرانگشت بزنید.'
+        errorMessage.value = 'تأیید اثرانگشت انجام نشد. دوباره تلاش کنید.'
       } else {
-        enrollError.value = error?.message || 'فعال‌سازی ممکن نشد.'
+        errorMessage.value = error?.message || 'باز کردن برنامه ممکن نشد.'
       }
     })
     .finally(() => {
-      isEnrolling.value = false
+      isBusy.value = false
     })
 }
 
 onMounted(async () => {
   document.documentElement.classList.add('login-no-scroll')
-
-  if (!isLoggedIn()) {
+  if (!hasStoredToken()) {
     await router.replace({ name: 'login' })
-    return
-  }
-
-  if (!isAppLockSupported()) {
-    await goHome()
-    return
-  }
-
-  if (isAppLockEnabled(getTokenUsername())) {
-    await goHome()
   }
 })
 
@@ -149,7 +155,7 @@ onUnmounted(() => {
 .brand h1 {
   margin: 0;
   color: #f8fafc;
-  font-size: 1.3rem;
+  font-size: 1.35rem;
 }
 
 .subtitle {
