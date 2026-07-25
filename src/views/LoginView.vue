@@ -7,6 +7,62 @@
         <p class="subtitle">این صفحه برای استفاده آفلاین کش می‌شود. (نسخه ۰.۰.۴)</p>
       </div>
 
+      <!-- ورود بیومتریک: دکمه تصویری اثرانگشت -->
+      <div v-if="showBiometricButton" class="biometric-hero">
+        <button
+          type="button"
+          class="fingerprint-btn"
+          :class="{ busy: isBiometricSubmitting }"
+          :disabled="isSubmitting || isBiometricSubmitting"
+          :aria-label="biometricStatusText"
+          @click="onBiometricLogin"
+        >
+          <svg viewBox="0 0 24 24" width="56" height="56" aria-hidden="true" fill="none">
+            <path
+              d="M12 2.5c-3.2 0-5.8 2.5-5.8 5.6v1.1"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+            />
+            <path
+              d="M6.2 11.2c0 4.7 2.4 8.8 5.8 10.3 3.4-1.5 5.8-5.6 5.8-10.3"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+            />
+            <path
+              d="M12 6.2c-1.7 0-3.1 1.3-3.1 3v2.2"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+            />
+            <path
+              d="M8.9 12.1c.3 3.1 1.7 5.8 3.1 6.9 1.4-1.1 2.8-3.8 3.1-6.9"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+            />
+            <path
+              d="M12 10.4v3.2"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+            />
+            <path
+              d="M17.8 9.2V9c0-3.1-2.6-5.6-5.8-5.6"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              opacity="0.55"
+            />
+          </svg>
+        </button>
+        <p class="biometric-status">{{ biometricStatusText }}</p>
+        <p class="biometric-hint">کاربر: «{{ biometricUsername }}»</p>
+      </div>
+
+      <div v-if="showBiometricButton" class="divider" aria-hidden="true"><span>یا ورود با رمز</span></div>
+
       <form class="login-form" @submit.prevent="onSubmit">
         <label class="field">
           <span>نام کاربری</span>
@@ -40,21 +96,8 @@
         </button>
       </form>
 
-      <div v-if="showBiometricButton" class="biometric-block">
-        <div class="divider" aria-hidden="true"><span>یا</span></div>
-        <button
-          type="button"
-          class="btn biometric"
-          :disabled="isSubmitting || isBiometricSubmitting"
-          @click="onBiometricLogin"
-        >
-          {{ isBiometricSubmitting ? 'در انتظار اثرانگشت...' : 'ورود با اثر انگشت / Face ID' }}
-        </button>
-        <p class="biometric-hint">برای کاربر «{{ biometricUsername }}»</p>
-      </div>
-
-      <p v-else-if="webAuthnReady === false" class="biometric-hint muted">
-        این دستگاه از ورود بیومتریک پشتیبانی نمی‌کند.
+      <p v-if="webAuthnSupported === false" class="biometric-hint muted">
+        این مرورگر از WebAuthn پشتیبانی نمی‌کند.
       </p>
 
       <p class="offline-hint" :data-online="isOnline">
@@ -71,16 +114,12 @@ import {
   apiGetAuthenticationOptions,
   apiHasCredentials,
   apiVerifyAuthentication,
-  getLastWebAuthnUsername,
+  getPreferredWebAuthnUsername,
   setLastWebAuthnUsername,
 } from '@/api/webAuthnApi'
 import { completeLogin, login } from '@/utils/auth'
 import { publicUrl } from '@/utils/publicUrl'
-import {
-  getPlatformAssertion,
-  isPlatformAuthenticatorAvailable,
-  isWebAuthnSupported,
-} from '@/utils/webAuthn'
+import { getPlatformAssertion, isWebAuthnSupported } from '@/utils/webAuthn'
 
 const appIcon = publicUrl('icons/android-chrome-192x192.png')
 const router = useRouter()
@@ -89,21 +128,30 @@ const password = ref('')
 const errorMessage = ref('')
 const isSubmitting = ref(false)
 const isBiometricSubmitting = ref(false)
-const webAuthnReady = ref(null)
+const webAuthnSupported = ref(null)
 const hasCredentialsForUser = ref(false)
 const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
 
-const biometricUsername = computed(() => username.value.trim() || getLastWebAuthnUsername())
+const biometricUsername = computed(() => username.value.trim() || getPreferredWebAuthnUsername())
 const showBiometricButton = computed(
-  () => webAuthnReady.value === true && hasCredentialsForUser.value && Boolean(biometricUsername.value),
+  () =>
+    webAuthnSupported.value === true &&
+    hasCredentialsForUser.value &&
+    Boolean(biometricUsername.value),
 )
+const biometricStatusText = computed(() => {
+  if (isBiometricSubmitting.value) {
+    return 'انگشت خود را روی حسگر اثرانگشت قرار دهید...'
+  }
+  return 'برای ورود، روی اثرانگشت بزنید'
+})
 
 function syncOnlineStatus() {
   isOnline.value = navigator.onLine
 }
 
 async function refreshBiometricAvailability() {
-  if (webAuthnReady.value !== true) {
+  if (webAuthnSupported.value !== true) {
     hasCredentialsForUser.value = false
     return
   }
@@ -165,10 +213,11 @@ async function onBiometricLogin() {
     }
 
     completeLogin(result.username)
-    await router.push({ name: 'home' })
+    await router.replace({ name: 'home' })
   } catch (error) {
+    console.warn('[WebAuthn] login failed:', error)
     if (error?.name === 'NotAllowedError') {
-      errorMessage.value = 'احراز هویت بیومتریک لغو شد.'
+      errorMessage.value = 'احراز هویت بیومتریک لغو شد یا حسگر پاسخ نداد.'
     } else {
       errorMessage.value = error?.message || 'ورود با اثرانگشت ممکن نشد.'
     }
@@ -181,13 +230,14 @@ onMounted(async () => {
   document.documentElement.classList.add('login-no-scroll')
   window.addEventListener('online', syncOnlineStatus)
   window.addEventListener('offline', syncOnlineStatus)
+  window.addEventListener('focus', refreshBiometricAvailability)
 
-  const lastUser = getLastWebAuthnUsername()
-  if (lastUser && !username.value) {
-    username.value = lastUser
+  const preferred = getPreferredWebAuthnUsername()
+  if (preferred && !username.value) {
+    username.value = preferred
   }
 
-  webAuthnReady.value = isWebAuthnSupported() && (await isPlatformAuthenticatorAvailable())
+  webAuthnSupported.value = isWebAuthnSupported()
   await refreshBiometricAvailability()
 })
 
@@ -195,6 +245,7 @@ onUnmounted(() => {
   document.documentElement.classList.remove('login-no-scroll')
   window.removeEventListener('online', syncOnlineStatus)
   window.removeEventListener('offline', syncOnlineStatus)
+  window.removeEventListener('focus', refreshBiometricAvailability)
 })
 </script>
 
@@ -226,7 +277,7 @@ onUnmounted(() => {
 
 .brand {
   text-align: center;
-  margin-bottom: 1.25rem;
+  margin-bottom: 1.1rem;
 }
 
 .brand img {
@@ -246,6 +297,92 @@ onUnmounted(() => {
   margin: 0.4rem 0 0;
   color: #94a3b8;
   font-size: 0.88rem;
+}
+
+.biometric-hero {
+  display: grid;
+  justify-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.35rem;
+}
+
+.fingerprint-btn {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  background:
+    radial-gradient(circle at 35% 30%, rgba(125, 211, 252, 0.35), transparent 55%),
+    rgba(14, 165, 233, 0.14);
+  color: #7dd3fc;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  box-shadow: 0 10px 28px rgba(14, 165, 233, 0.2);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.fingerprint-btn:hover:not(:disabled) {
+  transform: translateY(-1px) scale(1.02);
+  box-shadow: 0 14px 32px rgba(14, 165, 233, 0.28);
+}
+
+.fingerprint-btn.busy {
+  animation: pulse 1.2s ease-in-out infinite;
+  color: #fde68a;
+  border-color: rgba(251, 191, 36, 0.55);
+}
+
+.fingerprint-btn:disabled {
+  cursor: wait;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 10px 28px rgba(251, 191, 36, 0.18);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 14px 36px rgba(251, 191, 36, 0.32);
+  }
+}
+
+.biometric-status {
+  margin: 0;
+  text-align: center;
+  color: #e0f2fe;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.biometric-hint {
+  margin: 0;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+.biometric-hint.muted {
+  margin-top: 0.85rem;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1rem 0;
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(148, 163, 184, 0.25);
 }
 
 .login-form {
@@ -290,49 +427,9 @@ onUnmounted(() => {
   color: #0f172a;
 }
 
-.btn.biometric {
-  width: 100%;
-  background: rgba(14, 165, 233, 0.16);
-  color: #e0f2fe;
-  border: 1px solid rgba(56, 189, 248, 0.45);
-}
-
 .btn:disabled {
   opacity: 0.7;
   cursor: wait;
-}
-
-.biometric-block {
-  margin-top: 1rem;
-  display: grid;
-  gap: 0.65rem;
-}
-
-.divider {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  color: #64748b;
-  font-size: 0.8rem;
-}
-
-.divider::before,
-.divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: rgba(148, 163, 184, 0.25);
-}
-
-.biometric-hint {
-  margin: 0;
-  text-align: center;
-  color: #94a3b8;
-  font-size: 0.78rem;
-}
-
-.biometric-hint.muted {
-  margin-top: 0.85rem;
 }
 
 .error {

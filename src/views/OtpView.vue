@@ -46,13 +46,28 @@
         <p>
           برای دفعات بعد می‌توانید بدون رمز و OTP، با اثر انگشت یا Face ID وارد شوید.
         </p>
+
+        <div v-if="isEnrolling" class="enroll-waiting">
+          <div class="fingerprint-mini" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="40" height="40" fill="none">
+              <path
+                d="M12 2.5c-3.2 0-5.8 2.5-5.8 5.6v1.1M6.2 11.2c0 4.7 2.4 8.8 5.8 10.3 3.4-1.5 5.8-5.6 5.8-10.3M12 6.2c-1.7 0-3.1 1.3-3.1 3v2.2M8.9 12.1c.3 3.1 1.7 5.8 3.1 6.9 1.4-1.1 2.8-3.8 3.1-6.9M12 10.4v3.2"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+              />
+            </svg>
+          </div>
+          <p class="enroll-waiting-text">انگشت خود را روی حسگر اثرانگشت قرار دهید...</p>
+        </div>
+
         <p v-if="enrollError" class="error" role="alert">{{ enrollError }}</p>
         <div class="enroll-actions">
           <button type="button" class="btn ghost" :disabled="isEnrolling" @click="skipEnroll">
             فعلاً نه
           </button>
           <button type="button" class="btn primary" :disabled="isEnrolling" @click="enrollBiometric">
-            {{ isEnrolling ? 'در انتظار تأیید...' : 'فعال‌سازی' }}
+            {{ isEnrolling ? 'در انتظار حسگر...' : 'فعال‌سازی' }}
           </button>
         </div>
       </aside>
@@ -78,13 +93,13 @@ import {
   DEMO_OTP_CODE,
   getCurrentUser,
   hasPendingLogin,
+  isLoggedIn,
   logout,
   markOtpVerified,
 } from '@/utils/auth'
 import { publicUrl } from '@/utils/publicUrl'
 import {
   createPlatformCredential,
-  isPlatformAuthenticatorAvailable,
   isWebAuthnSupported,
 } from '@/utils/webAuthn'
 import { isWebOtpSupported, normalizeOtpCode, waitForSmsOtp } from '@/utils/webOtp'
@@ -147,7 +162,7 @@ function onOtpInput(event) {
 }
 
 async function goHome() {
-  await router.push({ name: 'home' })
+  await router.replace({ name: 'home' })
 }
 
 async function maybeOfferBiometricEnroll() {
@@ -156,10 +171,14 @@ async function maybeOfferBiometricEnroll() {
     return
   }
 
-  const already = await apiHasCredentials(username.value)
-  if (already) {
-    await goHome()
-    return
+  try {
+    const already = await apiHasCredentials(username.value)
+    if (already) {
+      await goHome()
+      return
+    }
+  } catch (_) {
+    // اگر استور خوانده نشد، باز هم پیشنهاد ثبت می‌دهیم
   }
 
   showEnrollPanel.value = true
@@ -200,7 +219,12 @@ async function enrollBiometric() {
   isEnrolling.value = true
 
   try {
-    const options = await apiGetRegistrationOptions(username.value)
+    const currentUser = username.value
+    if (!currentUser) {
+      throw new Error('نشست کاربر یافت نشد. دوباره وارد شوید.')
+    }
+
+    const options = await apiGetRegistrationOptions(currentUser)
     const attestation = await createPlatformCredential({
       challenge: options.challengeBuffer,
       userId: options.user.id,
@@ -209,14 +233,22 @@ async function enrollBiometric() {
       excludeCredentialIds: options.excludeCredentialIds,
     })
 
-    await apiVerifyRegistration(username.value, attestation)
+    const saved = await apiVerifyRegistration(currentUser, attestation)
+    console.info('[WebAuthn] registered:', saved)
+
     showEnrollPanel.value = false
     await goHome()
   } catch (error) {
+    console.warn('[WebAuthn] enroll failed:', error)
     if (error?.name === 'NotAllowedError') {
-      enrollError.value = 'ثبت اثرانگشت لغو شد.'
+      enrollError.value =
+        'ثبت لغو شد یا حسگر پاسخ نداد. بعد از Continue باید انگشت را روی حسگر بگذارید.'
     } else if (error?.name === 'InvalidStateError') {
-      enrollError.value = 'این Passkey قبلاً روی دستگاه ثبت شده است.'
+      // روی دستگاه هست ولی شاید در استور ما نبود — کاربر را به خانه بفرست
+      enrollError.value = 'Passkey روی دستگاه موجود است. در حال ورود به خانه...'
+      setTimeout(() => {
+        goHome()
+      }, 600)
     } else {
       enrollError.value = error?.message || 'ثبت Passkey ممکن نشد.'
     }
@@ -282,13 +314,19 @@ async function startWebOtpListener() {
 }
 
 onMounted(async () => {
+  if (isLoggedIn()) {
+    await router.replace({ name: 'home' })
+    return
+  }
+
   if (!hasPendingLogin()) {
     await router.replace({ name: 'login' })
     return
   }
 
   document.documentElement.classList.add('login-no-scroll')
-  canOfferBiometric.value = isWebAuthnSupported() && (await isPlatformAuthenticatorAvailable())
+  // اگر WebAuthn باشد پیشنهاد ثبت می‌دهیم؛ خود create روی دستگاه واقعی چک می‌شود
+  canOfferBiometric.value = isWebAuthnSupported()
   await nextTick()
   otpInputRef.value?.focus()
   startWebOtpListener()
@@ -462,5 +500,41 @@ onUnmounted(() => {
   gap: 0.5rem;
   justify-content: flex-end;
   flex-wrap: wrap;
+}
+
+.enroll-waiting {
+  display: grid;
+  justify-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0;
+}
+
+.fingerprint-mini {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fde68a;
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  background: rgba(251, 191, 36, 0.12);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.enroll-waiting-text {
+  margin: 0 !important;
+  color: #fde68a !important;
+  font-weight: 600;
+  text-align: center;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
 }
 </style>

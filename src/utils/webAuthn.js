@@ -1,6 +1,5 @@
 /**
  * WebAuthn helpers (مرورگر)
- * تبدیل‌ها و create/get سطح پایین — بدون ذخیره؛ ذخیره در لایه API شبیه‌سازی‌شده است.
  */
 
 function bufferToBase64Url(buffer) {
@@ -13,7 +12,7 @@ function bufferToBase64Url(buffer) {
 }
 
 function base64UrlToBuffer(base64Url) {
-  const padded = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+  const padded = String(base64Url).replace(/-/g, '+').replace(/_/g, '/')
   const padLength = (4 - (padded.length % 4)) % 4
   const base64 = padded + '='.repeat(padLength)
   const binary = atob(base64)
@@ -37,7 +36,6 @@ export function isWebAuthnSupported() {
   )
 }
 
-/** آیا authenticator پلتفرم (اثرانگشت/Face ID) در دسترس است؟ */
 export async function isPlatformAuthenticatorAvailable() {
   if (!isWebAuthnSupported()) return false
   if (typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== 'function') {
@@ -46,7 +44,8 @@ export async function isPlatformAuthenticatorAvailable() {
   try {
     return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
   } catch (_) {
-    return false
+    // بعضی دستگاه‌ها false منفی می‌دهند؛ برای UI همچنان اجازه تلاش می‌دهیم
+    return true
   }
 }
 
@@ -80,17 +79,18 @@ export async function createPlatformCredential({
     ],
     authenticatorSelection: {
       authenticatorAttachment: 'platform',
-      userVerification: 'required',
+      userVerification: 'preferred',
       residentKey: 'preferred',
-      requireResidentKey: false,
     },
-    timeout: 60_000,
+    timeout: 120_000,
     attestation: 'none',
-    excludeCredentials: excludeCredentialIds.map((id) => ({
+  }
+
+  if (excludeCredentialIds.length > 0) {
+    publicKey.excludeCredentials = excludeCredentialIds.map((id) => ({
       type: 'public-key',
       id: typeof id === 'string' ? base64UrlToBuffer(id) : id,
-      transports: ['internal'],
-    })),
+    }))
   }
 
   const credential = await navigator.credentials.create({ publicKey })
@@ -104,14 +104,16 @@ export async function createPlatformCredential({
 export async function getPlatformAssertion({ challenge, allowCredentialIds = [] }) {
   const publicKey = {
     challenge,
-    timeout: 60_000,
-    userVerification: 'required',
+    timeout: 120_000,
+    userVerification: 'preferred',
     rpId: getRpId(),
-    allowCredentials: allowCredentialIds.map((id) => ({
+  }
+
+  if (allowCredentialIds.length > 0) {
+    publicKey.allowCredentials = allowCredentialIds.map((id) => ({
       type: 'public-key',
       id: typeof id === 'string' ? base64UrlToBuffer(id) : id,
-      transports: ['internal'],
-    })),
+    }))
   }
 
   const assertion = await navigator.credentials.get({ publicKey })
@@ -124,8 +126,34 @@ export async function getPlatformAssertion({ challenge, allowCredentialIds = [] 
 
 function serializeAttestation(credential) {
   const response = credential.response
-  const publicKeyBuffer =
-    typeof response.getPublicKey === 'function' ? response.getPublicKey() : null
+  let publicKey = null
+  let publicKeyAlgorithm = null
+  let transports = ['internal']
+
+  try {
+    if (typeof response.getPublicKey === 'function') {
+      const keyBuffer = response.getPublicKey()
+      if (keyBuffer) publicKey = bufferToBase64Url(keyBuffer)
+    }
+  } catch (error) {
+    console.warn('[WebAuthn] getPublicKey failed:', error)
+  }
+
+  try {
+    if (typeof response.getPublicKeyAlgorithm === 'function') {
+      publicKeyAlgorithm = response.getPublicKeyAlgorithm()
+    }
+  } catch (_) {
+    // ignore
+  }
+
+  try {
+    if (typeof response.getTransports === 'function') {
+      transports = response.getTransports() || ['internal']
+    }
+  } catch (_) {
+    // ignore
+  }
 
   return {
     id: credential.id,
@@ -135,13 +163,9 @@ function serializeAttestation(credential) {
     response: {
       clientDataJSON: bufferToBase64Url(response.clientDataJSON),
       attestationObject: bufferToBase64Url(response.attestationObject),
-      publicKey: publicKeyBuffer ? bufferToBase64Url(publicKeyBuffer) : null,
-      publicKeyAlgorithm:
-        typeof response.getPublicKeyAlgorithm === 'function'
-          ? response.getPublicKeyAlgorithm()
-          : null,
-      transports:
-        typeof response.getTransports === 'function' ? response.getTransports() : ['internal'],
+      publicKey,
+      publicKeyAlgorithm,
+      transports,
     },
   }
 }
