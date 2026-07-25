@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { hasPendingLogin, hasStoredToken, isLoggedIn, isSessionUnlocked } from '@/utils/auth'
 import { isAppLockEnabled, getAppLockUsername } from '@/utils/appLock'
+import { appConfig, isFeatureEnabled } from '@/services/appConfig.service'
 
 const routes = [
   {
@@ -23,15 +24,11 @@ const routes = [
   },
   {
     path: '/biometric-unlock',
-    name: 'biometric-unlock',
-    component: () => import('@/views/BiometricUnlockView.vue'),
-    meta: { title: 'باز کردن برنامه', public: true },
+    redirect: { name: 'login' },
   },
   {
     path: '/biometric-enroll',
-    name: 'biometric-enroll',
-    component: () => import('@/views/BiometricEnrollView.vue'),
-    meta: { title: 'فعال‌سازی اثرانگشت', requiresAuth: true },
+    redirect: { name: 'feature-settings' },
   },
   {
     path: '/home',
@@ -44,6 +41,12 @@ const routes = [
     name: 'about',
     component: () => import('@/views/AboutView.vue'),
     meta: { title: 'درباره ما', requiresAuth: true },
+  },
+  {
+    path: '/settings/features',
+    name: 'feature-settings',
+    component: () => import('@/views/FeatureSettingsView.vue'),
+    meta: { title: 'تنظیمات', requiresAuth: true },
   },
   {
     path: '/:pathMatch(.*)*',
@@ -63,9 +66,14 @@ router.beforeEach((to) => {
   if (to.name === 'boot') return true
 
   if (to.meta.requiresAuth && !isLoggedIn()) {
-    if (hasPendingLogin()) return { name: 'otp' }
-    if (hasStoredToken() && isAppLockEnabled(getAppLockUsername()) && !isSessionUnlocked()) {
-      return { name: 'biometric-unlock' }
+    if (hasPendingLogin() && isFeatureEnabled('otp')) return { name: 'otp' }
+    if (
+      hasStoredToken() &&
+      isFeatureEnabled('appLock') &&
+      isAppLockEnabled(getAppLockUsername()) &&
+      !isSessionUnlocked()
+    ) {
+      return { name: 'login' }
     }
     if (hasStoredToken() && !isSessionUnlocked()) {
       return { name: 'boot' }
@@ -73,25 +81,26 @@ router.beforeEach((to) => {
     return { name: 'login' }
   }
 
-  if (to.name === 'otp' && !hasPendingLogin()) {
-    return isLoggedIn() ? { name: 'home' } : { name: 'login' }
+  if (to.name === 'otp') {
+    if (!isFeatureEnabled('otp')) {
+      return hasPendingLogin() || isLoggedIn() ? { name: 'boot' } : { name: 'login' }
+    }
+    if (!hasPendingLogin()) {
+      return isLoggedIn() ? { name: 'home' } : { name: 'login' }
+    }
   }
 
   if (to.name === 'login' && isLoggedIn()) {
     return { name: 'home' }
   }
 
-  if (to.name === 'biometric-unlock') {
-    if (!hasStoredToken()) return { name: 'login' }
-    if (isLoggedIn()) return { name: 'home' }
-  }
-
   return true
 })
 
 router.afterEach((to) => {
-  const pageTitle = to.meta.title ? String(to.meta.title) : 'هایپریک'
-  document.title = `${pageTitle} | هایپریک`
+  const brand = appConfig.value?.branding?.appName || 'هایپریک'
+  const pageTitle = to.meta.title ? String(to.meta.title) : brand
+  document.title = `${pageTitle} | ${brand}`
 })
 
 export default router

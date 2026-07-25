@@ -1,9 +1,10 @@
 <template>
   <nav class="nav" aria-label="منوی اصلی">
-    <RouterLink class="brand" :to="{ name: 'home' }">هایپریک</RouterLink>
+    <RouterLink class="brand" :to="{ name: 'home' }">{{ brandName }}</RouterLink>
     <div class="links">
       <RouterLink :to="{ name: 'home' }">خانه</RouterLink>
       <RouterLink :to="{ name: 'about' }">درباره</RouterLink>
+      <RouterLink v-if="loggedIn" :to="{ name: 'feature-settings' }">تنظیمات</RouterLink>
       <button v-if="loggedIn" type="button" class="logout-btn" @click="onLogout">
         خروج
       </button>
@@ -13,16 +14,21 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { isLoggedIn, logout } from '@/utils/auth'
+import { appConfig } from '@/services/appConfig.service'
 
 const router = useRouter()
-const loggedIn = ref(isLoggedIn())
+const route = useRoute()
+const loggedIn = computed(() => {
+  void route.fullPath
+  return isLoggedIn()
+})
+const brandName = computed(() => appConfig.value.branding.appName)
 
 async function onLogout() {
   logout()
-  loggedIn.value = false
   await router.push({ name: 'login' })
 }
 </script>

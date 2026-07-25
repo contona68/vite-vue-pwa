@@ -1,6 +1,6 @@
 <template>
   <main class="page login-page">
-    <div class="connection-bar" aria-live="polite">
+    <div v-if="showConnectivity" class="connection-bar" aria-live="polite">
       <span
         class="wifi-icon"
         :class="{ offline: !isOnline }"
@@ -26,16 +26,44 @@
           />
         </svg>
       </span>
-      <p v-if="!isOnline" class="offline-message">حالت آفلاین — صفحه از کش نمایش داده می‌شود</p>
+      <p v-if="!isOnline" class="offline-message">{{ offlineMessage }}</p>
     </div>
 
     <section class="login-card" aria-labelledby="login-title">
       <div class="brand">
         <img :src="appIcon" alt="لوگوی اپ" width="64" height="64" />
-        <h1 id="login-title">ورود به حساب</h1>
+        <h1 id="login-title">{{ showUnlockUi ? 'باز کردن برنامه' : 'ورود به حساب' }}</h1>
+        <p v-if="showUnlockUi" class="subtitle">برای ادامه، اثر انگشت خود را تأیید کنید.</p>
       </div>
 
-      <form class="login-form" @submit.prevent="onSubmit">
+      <!-- قفل اثرانگشت (فقط اگر کاربر در تنظیمات فعال کرده باشد) -->
+      <div v-if="showUnlockUi" class="unlock-block">
+        <button
+          v-if="!isUnlocking"
+          type="button"
+          class="fingerprint-btn"
+          aria-label="باز کردن با اثرانگشت"
+          @click="onUnlock"
+        >
+          <svg viewBox="0 0 24 24" width="56" height="56" aria-hidden="true" fill="none">
+            <path
+              d="M12 2.5c-3.2 0-5.8 2.5-5.8 5.6v1.1M6.2 11.2c0 4.7 2.4 8.8 5.8 10.3 3.4-1.5 5.8-5.6 5.8-10.3M12 6.2c-1.7 0-3.1 1.3-3.1 3v2.2M8.9 12.1c.3 3.1 1.7 5.8 3.1 6.9 1.4-1.1 2.8-3.8 3.1-6.9M12 10.4v3.2"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+            />
+          </svg>
+        </button>
+        <div v-else class="loading-wrap">
+          <div class="spinner" aria-hidden="true" />
+          <p>{{ unlockStatus }}</p>
+        </div>
+        <button type="button" class="skip-link" :disabled="isUnlocking" @click="usePasswordInstead">
+          ورود با نام کاربری و رمز
+        </button>
+      </div>
+
+      <form v-else class="login-form" @submit.prevent="onSubmit">
         <label class="field">
           <span>نام کاربری</span>
           <input
@@ -66,14 +94,30 @@
           {{ isSubmitting ? 'در حال ورود...' : 'ورود' }}
         </button>
       </form>
+
+      <p v-if="showUnlockUi && errorMessage" class="error" role="alert">{{ errorMessage }}</p>
     </section>
   </main>
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { beginPendingLogin, isLoggedIn } from '@/utils/auth'
+import { apiValidateToken } from '@/api/authApi'
+import { isAppLockEnabled, unlockWithBiometric } from '@/utils/appLock'
+import {
+  beginPendingLogin,
+  clearTokenSession,
+  getAccessToken,
+  getTokenUsername,
+  hasStoredToken,
+  isLoggedIn,
+  isSessionUnlocked,
+  markSessionUnlocked,
+} from '@/utils/auth'
+import { appConfig, isFeatureEnabled } from '@/services/appConfig.service'
+import { useConnectivity } from '@/services/connectivity.service'
+import { completeTokenLogin } from '@/services/login.service'
 import { publicUrl } from '@/utils/publicUrl'
 
 const appIcon = publicUrl('icons/android-chrome-192x192.png')
@@ -82,35 +126,102 @@ const username = ref('')
 const password = ref('')
 const errorMessage = ref('')
 const isSubmitting = ref(false)
-const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
+const isUnlocking = ref(false)
+const unlockStatus = ref('انگشت خود را روی حسگر قرار دهید...')
+const forcePasswordForm = ref(false)
+const { isOnline } = useConnectivity()
 
-function syncOnlineStatus() {
-  isOnline.value = navigator.onLine
-}
+const showConnectivity = computed(() => isFeatureEnabled('connectivityIndicator'))
+const offlineMessage = computed(() => appConfig.value.connectivity.offlineMessage)
+
+const showUnlockUi = computed(() => {
+  if (forcePasswordForm.value) return false
+  // خواندن appConfig برای واکنش‌پذیری به تغییر تنظیمات
+  if (!appConfig.value?.features?.appLock) return false
+  if (!hasStoredToken() || isSessionUnlocked()) return false
+  return isAppLockEnabled(getTokenUsername())
+})
+
+watch(
+  () => appConfig.value?.features?.appLock,
+  (enabled) => {
+    if (!enabled) forcePasswordForm.value = false
+  },
+)
 
 async function onSubmit() {
   errorMessage.value = ''
   isSubmitting.value = true
 
   try {
-    await new Promise((resolve) => setTimeout(resolve, 400))
+    await new Promise((resolve) => setTimeout(resolve, 300))
 
     if (!username.value || !password.value) {
       errorMessage.value = 'نام کاربری و رمز عبور الزامی است.'
       return
     }
 
+    // OTP خاموش → همان‌جا توکن صادر می‌شود
+    if (!isFeatureEnabled('otp')) {
+      await completeTokenLogin(username.value, '')
+      await router.replace({ name: 'home' })
+      return
+    }
+
     beginPendingLogin(username.value)
     await router.push({ name: 'otp' })
+  } catch (error) {
+    errorMessage.value = error?.message || 'ورود ناموفق بود.'
   } finally {
     isSubmitting.value = false
   }
 }
 
+function onUnlock() {
+  errorMessage.value = ''
+  const token = getAccessToken()
+  if (!token) {
+    forcePasswordForm.value = true
+    return
+  }
+
+  const unlockPromise = unlockWithBiometric()
+  isUnlocking.value = true
+  unlockStatus.value = 'انگشت خود را روی حسگر قرار دهید...'
+
+  unlockPromise
+    .then(async () => {
+      unlockStatus.value = 'در حال بررسی نشست...'
+      const result = await apiValidateToken(token)
+      if (!result.ok) {
+        clearTokenSession()
+        forcePasswordForm.value = true
+        errorMessage.value = 'نشست منقضی شده است. دوباره وارد شوید.'
+        return
+      }
+      markSessionUnlocked()
+      await router.replace({ name: 'home' })
+    })
+    .catch((error) => {
+      if (error?.name === 'NotAllowedError') {
+        errorMessage.value = 'تأیید اثرانگشت انجام نشد.'
+      } else {
+        errorMessage.value = error?.message || 'باز کردن برنامه ممکن نشد.'
+      }
+    })
+    .finally(() => {
+      isUnlocking.value = false
+    })
+}
+
+function usePasswordInstead() {
+  clearTokenSession()
+  forcePasswordForm.value = true
+  errorMessage.value = ''
+}
+
 onMounted(async () => {
   document.documentElement.classList.add('login-no-scroll')
-  window.addEventListener('online', syncOnlineStatus)
-  window.addEventListener('offline', syncOnlineStatus)
 
   if (isLoggedIn()) {
     await router.replace({ name: 'home' })
@@ -119,8 +230,6 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.documentElement.classList.remove('login-no-scroll')
-  window.removeEventListener('online', syncOnlineStatus)
-  window.removeEventListener('offline', syncOnlineStatus)
 })
 </script>
 
@@ -197,6 +306,58 @@ onUnmounted(() => {
   color: #f8fafc;
 }
 
+.subtitle {
+  margin: 0.45rem 0 0;
+  color: #94a3b8;
+  font-size: 0.88rem;
+}
+
+.unlock-block {
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+}
+
+.fingerprint-btn {
+  width: 104px;
+  height: 104px;
+  border-radius: 50%;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  background: rgba(14, 165, 233, 0.14);
+  color: #7dd3fc;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.loading-wrap {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  color: #e0f2fe;
+  font-weight: 600;
+}
+
+.spinner {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: 3px solid rgba(125, 211, 252, 0.25);
+  border-top-color: #38bdf8;
+  animation: spin 0.8s linear infinite;
+}
+
+.skip-link {
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .login-form {
   display: grid;
   gap: 0.85rem;
@@ -248,5 +409,12 @@ onUnmounted(() => {
   margin: 0;
   color: #fda4af;
   font-size: 0.88rem;
+  text-align: center;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

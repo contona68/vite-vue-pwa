@@ -47,20 +47,17 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { apiIssueToken } from '@/api/authApi'
 import {
   DEMO_OTP_CODE,
-  clearPendingLogin,
   getPendingUser,
   hasPendingLogin,
   isLoggedIn,
   logout,
-  markSessionUnlocked,
-  persistTokenSession,
 } from '@/utils/auth'
-import { isAppLockEnabled, isAppLockSupported } from '@/utils/appLock'
+import { appConfig, isFeatureEnabled } from '@/services/appConfig.service'
+import { completeTokenLogin } from '@/services/login.service'
 import { publicUrl } from '@/utils/publicUrl'
 import { isWebOtpSupported, normalizeOtpCode, waitForSmsOtp } from '@/utils/webOtp'
 
@@ -153,14 +150,6 @@ function onOtpPaste(event) {
   else if (code.length > 0) focusBox(Math.min(code.length, 5))
 }
 
-async function goNextAfterToken(usernameValue) {
-  if (isAppLockSupported() && !isAppLockEnabled(usernameValue)) {
-    await router.replace({ name: 'biometric-enroll' })
-    return
-  }
-  await router.replace({ name: 'home' })
-}
-
 async function onSubmit() {
   errorMessage.value = ''
   const code = normalizeOtpCode(otpCode.value, 6)
@@ -187,21 +176,8 @@ async function onSubmit() {
     }
 
     stopWebOtpListener()
-
-    const tokenResponse = await apiIssueToken({
-      username: pendingUser,
-      otpCode: code,
-    })
-
-    persistTokenSession({
-      accessToken: tokenResponse.accessToken,
-      username: tokenResponse.username,
-      expiresAt: tokenResponse.expiresAt,
-    })
-    clearPendingLogin()
-    markSessionUnlocked()
-
-    await goNextAfterToken(tokenResponse.username)
+    await completeTokenLogin(pendingUser, code)
+    await router.replace({ name: 'home' })
   } catch (error) {
     errorMessage.value = error?.message || 'صدور توکن ناموفق بود.'
   } finally {
@@ -238,6 +214,19 @@ async function startWebOtpListener() {
   }
 }
 
+async function finishWithoutOtpIfDisabled() {
+  if (isFeatureEnabled('otp')) return false
+  const pendingUser = getPendingUser()
+  if (!pendingUser) {
+    await router.replace({ name: 'login' })
+    return true
+  }
+  stopWebOtpListener()
+  await completeTokenLogin(pendingUser, '')
+  await router.replace({ name: 'home' })
+  return true
+}
+
 onMounted(async () => {
   if (isLoggedIn()) {
     await router.replace({ name: 'home' })
@@ -247,12 +236,22 @@ onMounted(async () => {
     await router.replace({ name: 'login' })
     return
   }
+  if (await finishWithoutOtpIfDisabled()) return
 
   document.documentElement.classList.add('login-no-scroll')
   await nextTick()
   focusBox(0)
   startWebOtpListener()
 })
+
+watch(
+  () => appConfig.value?.features?.otp,
+  async (enabled) => {
+    if (enabled === false && hasPendingLogin()) {
+      await finishWithoutOtpIfDisabled()
+    }
+  },
+)
 
 onUnmounted(() => {
   document.documentElement.classList.remove('login-no-scroll')

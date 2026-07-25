@@ -2,53 +2,23 @@
   <main class="page boot-page" aria-busy="true">
     <div class="boot-card">
       <div class="spinner" aria-hidden="true" />
-      <p>در حال آماده‌سازی...</p>
+      <p>{{ loadingText }}</p>
     </div>
   </main>
 </template>
 
 <script setup>
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { apiValidateToken } from '@/api/authApi'
-import { isAppLockEnabled } from '@/utils/appLock'
-import {
-  clearTokenSession,
-  getAccessToken,
-  getTokenUsername,
-  hasPendingLogin,
-  markSessionUnlocked,
-} from '@/utils/auth'
+import { appConfig } from '@/services/appConfig.service'
+import { resolveBootRouteName } from '@/services/boot.service'
 
 const router = useRouter()
+const loadingText = computed(() => appConfig.value.branding.bootLoadingText)
 
 onMounted(async () => {
-  if (hasPendingLogin()) {
-    await router.replace({ name: 'otp' })
-    return
-  }
-
-  const token = getAccessToken()
-  if (!token) {
-    await router.replace({ name: 'login' })
-    return
-  }
-
-  const username = getTokenUsername()
-  if (isAppLockEnabled(username)) {
-    await router.replace({ name: 'biometric-unlock' })
-    return
-  }
-
-  const result = await apiValidateToken(token)
-  if (!result.ok) {
-    clearTokenSession()
-    await router.replace({ name: 'login' })
-    return
-  }
-
-  markSessionUnlocked()
-  await router.replace({ name: 'home' })
+  const routeName = await resolveBootRouteName()
+  await router.replace({ name: routeName })
 })
 </script>
 

@@ -4,23 +4,26 @@
       <img class="app-icon" :src="appIcon" alt="" width="48" height="48" />
 
       <div class="text">
-        <strong id="update-title">بروزرسانی جدید</strong>
-        <p>نسخه جدید برنامه آماده است. برای اعمال تغییرات، بروزرسانی را بزنید.</p>
+        <strong id="update-title">{{ pwaUi.updateTitle }}</strong>
+        <p>{{ pwaUi.updateBody }}</p>
       </div>
 
       <div class="actions">
-        <button type="button" class="btn ghost" @click="onDismiss">بعداً</button>
-        <button type="button" class="btn primary" @click="onUpdate">بروزرسانی</button>
+        <button type="button" class="btn ghost" @click="onDismiss">{{ pwaUi.updateDismiss }}</button>
+        <button type="button" class="btn primary" @click="onUpdate">{{ pwaUi.updateAccept }}</button>
       </div>
     </aside>
   </Transition>
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { applyPwaUpdate, dismissPwaUpdate, needRefresh } from '@/pwa/updateState'
+import { appConfig } from '@/services/appConfig.service'
 import { publicUrl } from '@/utils/publicUrl'
 
 const appIcon = publicUrl('icons/android-chrome-192x192.png')
+const pwaUi = computed(() => appConfig.value.pwaUi)
 
 function onUpdate() {
   applyPwaUpdate()

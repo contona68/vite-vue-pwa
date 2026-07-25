@@ -13,9 +13,7 @@
       <template v-if="isGuide">
         <div class="text">
           <strong :id="bannerTitleId">{{ guideTitle }}</strong>
-          <p v-if="needsSafariHint">
-            لطفاً این صفحه را در <b>Safari</b> باز کنید، سپس مراحل زیر را انجام دهید.
-          </p>
+          <p v-if="needsSafariHint">{{ pwaUi.iosNeedsSafari }}</p>
           <p v-else>{{ guideIntro }}</p>
 
           <ol v-if="onIos" class="guide-steps" aria-label="مراحل نصب">
@@ -80,23 +78,22 @@
         </div>
 
         <div class="actions">
-          <button type="button" class="btn ghost" @click="dismiss">الان نه</button>
-          <button type="button" class="btn primary" @click="dismiss">متوجه شدم</button>
+          <button type="button" class="btn ghost" @click="dismiss">{{ pwaUi.guideDismiss }}</button>
+          <button type="button" class="btn primary" @click="dismiss">{{ pwaUi.guideConfirm }}</button>
         </div>
 
         <div v-if="onIos" class="ios-pointer" aria-hidden="true" />
       </template>
 
-      <!-- نصب مستقیم با beforeinstallprompt (اندروید / کروم دسکتاپ و ...) -->
       <template v-else>
         <div class="text">
-          <strong id="install-title">نصب برنامه</strong>
-          <p>برنامه را روی دستگاه خود نصب کنید تا سریع‌تر و راحت‌تر به آن دسترسی داشته باشید.</p>
+          <strong id="install-title">{{ pwaUi.installTitle }}</strong>
+          <p>{{ pwaUi.installBody }}</p>
         </div>
 
         <div class="actions">
-          <button type="button" class="btn ghost" @click="dismiss">الان نه</button>
-          <button type="button" class="btn primary" @click="install">نصب</button>
+          <button type="button" class="btn ghost" @click="dismiss">{{ pwaUi.installDismiss }}</button>
+          <button type="button" class="btn primary" @click="install">{{ pwaUi.installAccept }}</button>
         </div>
       </template>
     </aside>
@@ -116,6 +113,7 @@ import {
   shouldHideByDismissPolicy,
 } from '@/utils/pwaInstall'
 import { publicUrl } from '@/utils/publicUrl'
+import { appConfig } from '@/services/appConfig.service'
 
 /** فقط برای دسکتاپ بدون beforeinstallprompt؛ اندروید صبر می‌کند تا رویداد نصب بیاید */
 const MANUAL_GUIDE_DELAY_MS = 2500
@@ -127,14 +125,11 @@ const onIos = isIosDevice()
 const onAndroid = isAndroidDevice()
 const onIosSafari = isIosSafari()
 
+const pwaUi = computed(() => appConfig.value.pwaUi)
 const needsSafariHint = computed(() => isGuide.value && onIos && !onIosSafari)
 const bannerTitleId = computed(() => (isGuide.value ? 'guide-install-title' : 'install-title'))
-const guideTitle = computed(() => (onIos ? 'نصب روی آیفون' : 'نصب برنامه'))
-const guideIntro = computed(() =>
-  onIos
-    ? 'برای دسترسی سریع‌تر، برنامه را به صفحه اصلی اضافه کنید:'
-    : 'مرورگر شما دکمه نصب خودکار ندارد. می‌توانید از منوی مرورگر نصب کنید:',
-)
+const guideTitle = computed(() => (onIos ? pwaUi.value.iosGuideTitle : pwaUi.value.manualGuideTitle))
+const guideIntro = computed(() => (onIos ? pwaUi.value.iosGuideIntro : pwaUi.value.manualGuideIntro))
 
 let deferredPrompt = null
 let alreadyInstalled = false
