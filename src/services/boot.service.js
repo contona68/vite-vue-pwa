@@ -8,12 +8,18 @@ import {
   hasPendingLogin,
   markSessionUnlocked,
 } from '@/utils/auth'
+import { isBrowserOnline } from '@/utils/network'
 
 /**
  * تصمیم مسیر شروع اپ بعد از لود کانفیگ
  * @returns {Promise<string>} route name
  */
 export async function resolveBootRouteName() {
+  // آفلاین: فقط پوسته ورود (لاگین آنلاین است)
+  if (!isBrowserOnline()) {
+    return 'login'
+  }
+
   if (hasPendingLogin()) {
     return isFeatureEnabled('otp') ? 'otp' : 'login'
   }
@@ -24,7 +30,6 @@ export async function resolveBootRouteName() {
   }
 
   const username = getTokenUsername()
-  // قفل فعال باشد → صفحه ورود (آنجا اثرانگشت نشان داده می‌شود)
   if (isFeatureEnabled('appLock') && isAppLockEnabled(username)) {
     return 'login'
   }

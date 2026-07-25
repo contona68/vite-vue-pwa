@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { hasPendingLogin, hasStoredToken, isLoggedIn, isSessionUnlocked } from '@/utils/auth'
 import { isAppLockEnabled, getAppLockUsername } from '@/utils/appLock'
 import { appConfig, isFeatureEnabled } from '@/services/appConfig.service'
+import { isBrowserOnline } from '@/utils/network'
 
 const routes = [
   {
@@ -56,6 +57,11 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   if (to.name === 'boot') return true
+
+  // آفلاین: فقط صفحه ورود (حتی اگر نشست قبلی باز باشد)
+  if (!isBrowserOnline()) {
+    return to.name === 'login' ? true : { name: 'login' }
+  }
 
   if (to.meta.requiresAuth && !isLoggedIn()) {
     if (hasPendingLogin() && isFeatureEnabled('otp')) return { name: 'otp' }

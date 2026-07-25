@@ -314,9 +314,8 @@ onUnmounted(() => {
   flex-shrink: 0;
   width: 48px;
   height: 48px;
-  border-radius: 0.75rem;
-  object-fit: cover;
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.1);
+  background: transparent;
+  object-fit: contain;
 }
 
 .text {

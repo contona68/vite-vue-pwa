@@ -34,7 +34,11 @@
 
         <p v-if="errorMessage" class="error" role="alert">{{ errorMessage }}</p>
 
-        <button class="btn primary" type="submit" :disabled="isSubmitting || otpCode.length < 6">
+        <button
+          class="btn primary"
+          type="submit"
+          :disabled="isSubmitting || !isOnline || otpCode.length < 6"
+        >
           {{ isSubmitting ? 'در حال بررسی...' : 'تأیید کد' }}
         </button>
 
@@ -57,12 +61,14 @@ import {
   logout,
 } from '@/utils/auth'
 import { appConfig, isFeatureEnabled } from '@/services/appConfig.service'
+import { useConnectivity } from '@/services/connectivity.service'
 import { completeTokenLogin } from '@/services/login.service'
 import { APP_ICON_192 } from '@/utils/publicUrl'
 import { isWebOtpSupported, normalizeOtpCode, waitForSmsOtp } from '@/utils/webOtp'
 
 const appIcon = APP_ICON_192
 const router = useRouter()
+const { isOnline } = useConnectivity()
 
 const otpDigits = ref(['', '', '', '', '', ''])
 const otpInputRefs = ref([])
@@ -163,6 +169,11 @@ async function onSubmit() {
   isSubmitting.value = true
 
   try {
+    if (!isOnline.value) {
+      errorMessage.value = 'برای ورود به اینترنت نیاز دارید.'
+      return
+    }
+
     if (code !== DEMO_OTP_CODE) {
       errorMessage.value = 'کد واردشده نادرست است.'
       return
@@ -216,6 +227,10 @@ async function startWebOtpListener() {
 
 async function finishWithoutOtpIfDisabled() {
   if (isFeatureEnabled('otp')) return false
+  if (!isOnline.value) {
+    await router.replace({ name: 'login' })
+    return true
+  }
   const pendingUser = getPendingUser()
   if (!pendingUser) {
     await router.replace({ name: 'login' })
@@ -228,6 +243,10 @@ async function finishWithoutOtpIfDisabled() {
 }
 
 onMounted(async () => {
+  if (!isOnline.value) {
+    await router.replace({ name: 'login' })
+    return
+  }
   if (isLoggedIn()) {
     await router.replace({ name: 'home' })
     return
@@ -242,6 +261,13 @@ onMounted(async () => {
   await nextTick()
   focusBox(0)
   startWebOtpListener()
+})
+
+watch(isOnline, async (online) => {
+  if (!online) {
+    stopWebOtpListener()
+    await router.replace({ name: 'login' })
+  }
 })
 
 watch(
@@ -287,8 +313,8 @@ onUnmounted(() => {
 .brand img {
   width: 56px;
   height: 56px;
-  border-radius: 1rem;
   margin-bottom: 0.65rem;
+  background: transparent;
 }
 
 .brand h1 {

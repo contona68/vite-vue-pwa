@@ -92,7 +92,7 @@
 
         <p v-if="errorMessage" class="error" role="alert">{{ errorMessage }}</p>
 
-        <button class="btn primary" type="submit" :disabled="isSubmitting">
+        <button class="btn primary" type="submit" :disabled="isSubmitting || !isOnline">
           {{ isSubmitting ? 'در حال ورود...' : 'ورود' }}
         </button>
       </form>
@@ -137,6 +137,7 @@ const showConnectivity = computed(() => isFeatureEnabled('connectivityIndicator'
 const offlineMessage = computed(() => appConfig.value.connectivity.offlineMessage)
 
 const showUnlockUi = computed(() => {
+  if (!isOnline.value) return false
   if (forcePasswordForm.value) return false
   if (!isFeatureEnabled('appLock')) return false
   if (!hasStoredToken() || isSessionUnlocked()) return false
@@ -150,11 +151,26 @@ watch(
   },
 )
 
+watch(isOnline, async (online) => {
+  if (online && isLoggedIn()) {
+    await router.replace({ name: 'home' })
+    return
+  }
+  if (online) {
+    await triggerUnlockAutomatically()
+  }
+})
+
 async function onSubmit() {
   errorMessage.value = ''
   isSubmitting.value = true
 
   try {
+    if (!isOnline.value) {
+      errorMessage.value = 'برای ورود به اینترنت نیاز دارید.'
+      return
+    }
+
     await new Promise((resolve) => setTimeout(resolve, 300))
 
     if (!username.value || !password.value) {
@@ -162,7 +178,6 @@ async function onSubmit() {
       return
     }
 
-    // OTP خاموش → همان‌جا توکن صادر می‌شود
     if (!isFeatureEnabled('otp')) {
       await completeTokenLogin(username.value, '')
       await router.replace({ name: 'home' })
@@ -182,6 +197,11 @@ function onUnlock() {
   if (isUnlocking.value) return
 
   errorMessage.value = ''
+  if (!isOnline.value) {
+    errorMessage.value = 'برای باز کردن برنامه به اینترنت نیاز دارید.'
+    return
+  }
+
   const token = getAccessToken()
   if (!token) {
     forcePasswordForm.value = true
@@ -225,17 +245,17 @@ function usePasswordInstead() {
 
 /** پیش‌فرض: با باز شدن صفحه، دیالوگ اثرانگشت خودکار باز شود */
 async function triggerUnlockAutomatically() {
-  if (!showUnlockUi.value || isUnlocking.value) return
+  if (!isOnline.value || !showUnlockUi.value || isUnlocking.value) return
   await nextTick()
   window.setTimeout(() => {
-    if (showUnlockUi.value && !isUnlocking.value) onUnlock()
+    if (isOnline.value && showUnlockUi.value && !isUnlocking.value) onUnlock()
   }, 120)
 }
 
 onMounted(async () => {
   document.documentElement.classList.add('login-no-scroll')
 
-  if (isLoggedIn()) {
+  if (isOnline.value && isLoggedIn()) {
     await router.replace({ name: 'home' })
     return
   }
@@ -311,8 +331,8 @@ onUnmounted(() => {
 .brand img {
   width: 56px;
   height: 56px;
-  border-radius: 1rem;
   margin-bottom: 0.65rem;
+  background: transparent;
 }
 
 .brand h1 {

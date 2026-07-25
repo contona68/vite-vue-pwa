@@ -56,8 +56,8 @@ function onDismiss() {
   flex-shrink: 0;
   width: 48px;
   height: 48px;
-  border-radius: 0.75rem;
-  object-fit: cover;
+  background: transparent;
+  object-fit: contain;
 }
 
 .text {
