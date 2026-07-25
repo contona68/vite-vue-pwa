@@ -29,6 +29,12 @@ export function markOtpVerified() {
   sessionStorage.setItem(OTP_VERIFIED_KEY, '1')
 }
 
+/** ورود کامل (مثلاً بعد از WebAuthn موفق) — بدون OTP مجدد */
+export function completeLogin(username) {
+  sessionStorage.setItem(AUTH_STORAGE_KEY, username)
+  sessionStorage.setItem(OTP_VERIFIED_KEY, '1')
+}
+
 export function logout() {
   sessionStorage.removeItem(AUTH_STORAGE_KEY)
   sessionStorage.removeItem(OTP_VERIFIED_KEY)

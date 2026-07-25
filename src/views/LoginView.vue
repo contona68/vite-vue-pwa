@@ -17,6 +17,7 @@
             autocomplete="username"
             placeholder="مثلاً admin"
             required
+            @input="refreshBiometricAvailability"
           />
         </label>
 
@@ -34,10 +35,27 @@
 
         <p v-if="errorMessage" class="error" role="alert">{{ errorMessage }}</p>
 
-        <button class="btn primary" type="submit" :disabled="isSubmitting">
+        <button class="btn primary" type="submit" :disabled="isSubmitting || isBiometricSubmitting">
           {{ isSubmitting ? 'در حال ورود...' : 'ورود' }}
         </button>
       </form>
+
+      <div v-if="showBiometricButton" class="biometric-block">
+        <div class="divider" aria-hidden="true"><span>یا</span></div>
+        <button
+          type="button"
+          class="btn biometric"
+          :disabled="isSubmitting || isBiometricSubmitting"
+          @click="onBiometricLogin"
+        >
+          {{ isBiometricSubmitting ? 'در انتظار اثرانگشت...' : 'ورود با اثر انگشت / Face ID' }}
+        </button>
+        <p class="biometric-hint">برای کاربر «{{ biometricUsername }}»</p>
+      </div>
+
+      <p v-else-if="webAuthnReady === false" class="biometric-hint muted">
+        این دستگاه از ورود بیومتریک پشتیبانی نمی‌کند.
+      </p>
 
       <p class="offline-hint" :data-online="isOnline">
         {{ isOnline ? 'اتصال اینترنت برقرار است' : 'حالت آفلاین — صفحه از کش نمایش داده می‌شود' }}
@@ -47,10 +65,22 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { login } from '@/utils/auth'
+import {
+  apiGetAuthenticationOptions,
+  apiHasCredentials,
+  apiVerifyAuthentication,
+  getLastWebAuthnUsername,
+  setLastWebAuthnUsername,
+} from '@/api/webAuthnApi'
+import { completeLogin, login } from '@/utils/auth'
 import { publicUrl } from '@/utils/publicUrl'
+import {
+  getPlatformAssertion,
+  isPlatformAuthenticatorAvailable,
+  isWebAuthnSupported,
+} from '@/utils/webAuthn'
 
 const appIcon = publicUrl('icons/android-chrome-192x192.png')
 const router = useRouter()
@@ -58,10 +88,37 @@ const username = ref('')
 const password = ref('')
 const errorMessage = ref('')
 const isSubmitting = ref(false)
+const isBiometricSubmitting = ref(false)
+const webAuthnReady = ref(null)
+const hasCredentialsForUser = ref(false)
 const isOnline = ref(typeof navigator !== 'undefined' ? navigator.onLine : true)
+
+const biometricUsername = computed(() => username.value.trim() || getLastWebAuthnUsername())
+const showBiometricButton = computed(
+  () => webAuthnReady.value === true && hasCredentialsForUser.value && Boolean(biometricUsername.value),
+)
 
 function syncOnlineStatus() {
   isOnline.value = navigator.onLine
+}
+
+async function refreshBiometricAvailability() {
+  if (webAuthnReady.value !== true) {
+    hasCredentialsForUser.value = false
+    return
+  }
+
+  const target = biometricUsername.value
+  if (!target) {
+    hasCredentialsForUser.value = false
+    return
+  }
+
+  try {
+    hasCredentialsForUser.value = await apiHasCredentials(target)
+  } catch (_) {
+    hasCredentialsForUser.value = false
+  }
 }
 
 async function onSubmit() {
@@ -69,7 +126,6 @@ async function onSubmit() {
   isSubmitting.value = true
 
   try {
-    // فعلاً لاگین دمو؛ بعداً به API واقعی وصل می‌شود
     await new Promise((resolve) => setTimeout(resolve, 400))
 
     if (!username.value || !password.value) {
@@ -77,6 +133,7 @@ async function onSubmit() {
       return
     }
 
+    setLastWebAuthnUsername(username.value)
     login(username.value)
     await router.push({ name: 'otp' })
   } finally {
@@ -84,10 +141,54 @@ async function onSubmit() {
   }
 }
 
-onMounted(() => {
+async function onBiometricLogin() {
+  errorMessage.value = ''
+  const targetUser = biometricUsername.value
+  if (!targetUser) {
+    errorMessage.value = 'ابتدا نام کاربری را وارد کنید.'
+    return
+  }
+
+  isBiometricSubmitting.value = true
+
+  try {
+    const options = await apiGetAuthenticationOptions(targetUser)
+    const assertion = await getPlatformAssertion({
+      challenge: options.challengeBuffer,
+      allowCredentialIds: options.allowCredentialIds,
+    })
+
+    const result = await apiVerifyAuthentication(targetUser, assertion)
+    if (!result.ok) {
+      errorMessage.value = 'تأیید اثرانگشت ناموفق بود.'
+      return
+    }
+
+    completeLogin(result.username)
+    await router.push({ name: 'home' })
+  } catch (error) {
+    if (error?.name === 'NotAllowedError') {
+      errorMessage.value = 'احراز هویت بیومتریک لغو شد.'
+    } else {
+      errorMessage.value = error?.message || 'ورود با اثرانگشت ممکن نشد.'
+    }
+  } finally {
+    isBiometricSubmitting.value = false
+  }
+}
+
+onMounted(async () => {
   document.documentElement.classList.add('login-no-scroll')
   window.addEventListener('online', syncOnlineStatus)
   window.addEventListener('offline', syncOnlineStatus)
+
+  const lastUser = getLastWebAuthnUsername()
+  if (lastUser && !username.value) {
+    username.value = lastUser
+  }
+
+  webAuthnReady.value = isWebAuthnSupported() && (await isPlatformAuthenticatorAvailable())
+  await refreshBiometricAvailability()
 })
 
 onUnmounted(() => {
@@ -114,7 +215,7 @@ onUnmounted(() => {
 .login-card {
   width: min(100%, 420px);
   max-height: calc(100dvh - 2rem);
-  overflow: hidden;
+  overflow: auto;
   padding: 1.5rem 1.25rem;
   border-radius: 1.25rem;
   background: rgba(15, 23, 42, 0.72);
@@ -189,9 +290,49 @@ onUnmounted(() => {
   color: #0f172a;
 }
 
+.btn.biometric {
+  width: 100%;
+  background: rgba(14, 165, 233, 0.16);
+  color: #e0f2fe;
+  border: 1px solid rgba(56, 189, 248, 0.45);
+}
+
 .btn:disabled {
   opacity: 0.7;
   cursor: wait;
+}
+
+.biometric-block {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(148, 163, 184, 0.25);
+}
+
+.biometric-hint {
+  margin: 0;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.78rem;
+}
+
+.biometric-hint.muted {
+  margin-top: 0.85rem;
 }
 
 .error {

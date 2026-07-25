@@ -32,14 +32,30 @@
         <p v-if="hintMessage" class="hint">{{ hintMessage }}</p>
         <p v-if="errorMessage" class="error" role="alert">{{ errorMessage }}</p>
 
-        <button class="btn primary" type="submit" :disabled="isSubmitting || otpCode.length < 6">
+        <button class="btn primary" type="submit" :disabled="isSubmitting || otpCode.length < 6 || showEnrollPanel">
           {{ isSubmitting ? 'در حال بررسی...' : 'تأیید کد' }}
         </button>
 
-        <button class="btn ghost" type="button" @click="goBackToLogin">
+        <button class="btn ghost" type="button" :disabled="showEnrollPanel" @click="goBackToLogin">
           بازگشت به ورود
         </button>
       </form>
+
+      <aside v-if="showEnrollPanel" class="enroll-panel" aria-labelledby="enroll-title">
+        <strong id="enroll-title">ورود سریع با اثرانگشت؟</strong>
+        <p>
+          برای دفعات بعد می‌توانید بدون رمز و OTP، با اثر انگشت یا Face ID وارد شوید.
+        </p>
+        <p v-if="enrollError" class="error" role="alert">{{ enrollError }}</p>
+        <div class="enroll-actions">
+          <button type="button" class="btn ghost" :disabled="isEnrolling" @click="skipEnroll">
+            فعلاً نه
+          </button>
+          <button type="button" class="btn primary" :disabled="isEnrolling" @click="enrollBiometric">
+            {{ isEnrolling ? 'در انتظار تأیید...' : 'فعال‌سازی' }}
+          </button>
+        </div>
+      </aside>
 
       <p class="offline-hint">
         برای تست دمو فعلاً کد
@@ -54,6 +70,11 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
+  apiGetRegistrationOptions,
+  apiHasCredentials,
+  apiVerifyRegistration,
+} from '@/api/webAuthnApi'
+import {
   DEMO_OTP_CODE,
   getCurrentUser,
   hasPendingLogin,
@@ -61,6 +82,11 @@ import {
   markOtpVerified,
 } from '@/utils/auth'
 import { publicUrl } from '@/utils/publicUrl'
+import {
+  createPlatformCredential,
+  isPlatformAuthenticatorAvailable,
+  isWebAuthnSupported,
+} from '@/utils/webAuthn'
 import { isWebOtpSupported, normalizeOtpCode, waitForSmsOtp } from '@/utils/webOtp'
 
 const appIcon = publicUrl('icons/android-chrome-192x192.png')
@@ -73,9 +99,16 @@ const errorMessage = ref('')
 const statusMessage = ref('')
 const isSubmitting = ref(false)
 const webOtpActive = ref(false)
+const showEnrollPanel = ref(false)
+const isEnrolling = ref(false)
+const enrollError = ref('')
+const canOfferBiometric = ref(false)
 
 const username = computed(() => getCurrentUser())
 const hintMessage = computed(() => {
+  if (showEnrollPanel.value) {
+    return 'ورود تأیید شد. در صورت تمایل اثرانگشت را فعال کنید.'
+  }
   if (statusMessage.value) return statusMessage.value
   if (webOtpActive.value) {
     return 'در حال انتظار برای دریافت خودکار کد از پیامک (Android)...'
@@ -113,7 +146,28 @@ function onOtpInput(event) {
   }
 }
 
+async function goHome() {
+  await router.push({ name: 'home' })
+}
+
+async function maybeOfferBiometricEnroll() {
+  if (!canOfferBiometric.value) {
+    await goHome()
+    return
+  }
+
+  const already = await apiHasCredentials(username.value)
+  if (already) {
+    await goHome()
+    return
+  }
+
+  showEnrollPanel.value = true
+}
+
 async function onSubmit() {
+  if (showEnrollPanel.value) return
+
   errorMessage.value = ''
   const code = normalizeOtpCode(otpCode.value, 6)
   otpCode.value = code
@@ -128,7 +182,6 @@ async function onSubmit() {
   try {
     await new Promise((resolve) => setTimeout(resolve, 300))
 
-    // فعلاً دمو؛ بعداً با API واقعی چک می‌شود
     if (code !== DEMO_OTP_CODE) {
       errorMessage.value = 'کد واردشده نادرست است.'
       return
@@ -136,10 +189,45 @@ async function onSubmit() {
 
     stopWebOtpListener()
     markOtpVerified()
-    await router.push({ name: 'home' })
+    await maybeOfferBiometricEnroll()
   } finally {
     isSubmitting.value = false
   }
+}
+
+async function enrollBiometric() {
+  enrollError.value = ''
+  isEnrolling.value = true
+
+  try {
+    const options = await apiGetRegistrationOptions(username.value)
+    const attestation = await createPlatformCredential({
+      challenge: options.challengeBuffer,
+      userId: options.user.id,
+      userName: options.user.name,
+      userDisplayName: options.user.displayName,
+      excludeCredentialIds: options.excludeCredentialIds,
+    })
+
+    await apiVerifyRegistration(username.value, attestation)
+    showEnrollPanel.value = false
+    await goHome()
+  } catch (error) {
+    if (error?.name === 'NotAllowedError') {
+      enrollError.value = 'ثبت اثرانگشت لغو شد.'
+    } else if (error?.name === 'InvalidStateError') {
+      enrollError.value = 'این Passkey قبلاً روی دستگاه ثبت شده است.'
+    } else {
+      enrollError.value = error?.message || 'ثبت Passkey ممکن نشد.'
+    }
+  } finally {
+    isEnrolling.value = false
+  }
+}
+
+async function skipEnroll() {
+  showEnrollPanel.value = false
+  await goHome()
 }
 
 async function goBackToLogin() {
@@ -200,6 +288,7 @@ onMounted(async () => {
   }
 
   document.documentElement.classList.add('login-no-scroll')
+  canOfferBiometric.value = isWebAuthnSupported() && (await isPlatformAuthenticatorAvailable())
   await nextTick()
   otpInputRef.value?.focus()
   startWebOtpListener()
@@ -344,5 +433,34 @@ onUnmounted(() => {
 .offline-hint strong {
   color: #fbbf24;
   letter-spacing: 0.12em;
+}
+
+.enroll-panel {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 0.9rem;
+  background: rgba(14, 165, 233, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  display: grid;
+  gap: 0.65rem;
+}
+
+.enroll-panel strong {
+  color: #e0f2fe;
+  font-size: 0.98rem;
+}
+
+.enroll-panel p {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.enroll-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 </style>
