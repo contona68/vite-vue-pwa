@@ -101,7 +101,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
   incrementDismissLoadCount,
   isAndroidDevice,
@@ -115,6 +115,7 @@ import {
 } from '@/utils/pwaInstall'
 import { APP_ICON_192 } from '@/utils/publicUrl'
 import { appConfig } from '@/services/appConfig.service'
+import { needRefresh } from '@/pwa/updateState'
 
 /** فقط برای دسکتاپ بدون beforeinstallprompt؛ اندروید صبر می‌کند تا رویداد نصب بیاید */
 const MANUAL_GUIDE_DELAY_MS = 2500
@@ -138,7 +139,8 @@ let nativeInstallReady = false
 let manualGuideTimer = null
 
 function canShowBanner() {
-  return !alreadyInstalled && !shouldHideByDismissPolicy()
+  // بنر آپدیت اولویت دارد؛ رویداد نصب را نگه می‌داریم تا بعد از بستن آپدیت نشان دهیم
+  return !alreadyInstalled && !shouldHideByDismissPolicy() && !needRefresh.value
 }
 
 function hideBanner() {
@@ -241,6 +243,16 @@ async function install() {
 const standaloneMedia = window.matchMedia('(display-mode: standalone)')
 const fullscreenMedia = window.matchMedia('(display-mode: fullscreen)')
 const minimalUiMedia = window.matchMedia('(display-mode: minimal-ui)')
+
+watch(needRefresh, (updating) => {
+  if (updating) {
+    hideBanner()
+    return
+  }
+  if (deferredPrompt) {
+    showNativeInstallBanner()
+  }
+})
 
 onMounted(async () => {
   if (await refreshInstalledState()) return

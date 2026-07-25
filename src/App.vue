@@ -1,7 +1,8 @@
 <template>
   <div class="app-shell">
     <UpdatePrompt v-if="showUpdateBanner" />
-    <InstallPrompt v-if="showInstallBanner && !needRefresh" />
+    <!-- همیشه mount بماند تا beforeinstallprompt از دست نرود (حتی وقتی بنر آپدیت باز است) -->
+    <InstallPrompt v-if="showInstallBanner" />
     <RouterView />
   </div>
 </template>
@@ -10,7 +11,6 @@
 import { computed } from 'vue'
 import InstallPrompt from '@/components/InstallPrompt.vue'
 import UpdatePrompt from '@/components/UpdatePrompt.vue'
-import { needRefresh } from '@/pwa/updateState'
 import { isFeatureEnabled } from '@/services/appConfig.service'
 
 const showUpdateBanner = computed(() => isFeatureEnabled('updateBanner'))
