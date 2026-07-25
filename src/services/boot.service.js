@@ -15,7 +15,6 @@ import { isBrowserOnline } from '@/utils/network'
  * @returns {Promise<string>} route name
  */
 export async function resolveBootRouteName() {
-  // آفلاین: فقط پوسته ورود (لاگین آنلاین است)
   if (!isBrowserOnline()) {
     return 'login'
   }
@@ -30,10 +29,15 @@ export async function resolveBootRouteName() {
   }
 
   const username = getTokenUsername()
-  if (isFeatureEnabled('appLock') && isAppLockEnabled(username)) {
+  const lockEnabledInSettings =
+    isFeatureEnabled('appLock') && isAppLockEnabled(username)
+
+  // قفل در تنظیمات روشن → صفحه ورود تصمیم اثرانگشت/مودال/فرم را می‌گیرد
+  if (lockEnabledInSettings) {
     return 'login'
   }
 
+  // قفل خاموش → بدون فرم؛ فقط اعتبارسنجی توکن
   const result = await apiValidateToken(token)
   if (!result.ok) {
     clearTokenSession()

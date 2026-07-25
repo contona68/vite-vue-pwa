@@ -36,6 +36,22 @@ export function isWebAuthnSupported() {
   )
 }
 
+/**
+ * آیا حسگر بیومتریک پلتفرم (اثرانگشت/Face) روی دستگاه آماده است؟
+ * تعداد اثرانگشت را نمی‌گوید؛ فقط در دسترس بودن تقریبی.
+ */
+export async function isPlatformBiometricAvailable() {
+  if (!isWebAuthnSupported()) return false
+  if (typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== 'function') {
+    return false
+  }
+  try {
+    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
+  } catch (_) {
+    return false
+  }
+}
+
 export function createRandomChallenge(byteLength = 32) {
   const bytes = new Uint8Array(byteLength)
   crypto.getRandomValues(bytes)

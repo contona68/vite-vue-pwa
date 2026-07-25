@@ -38,7 +38,6 @@
         </p>
       </div>
 
-      <!-- قفل اثرانگشت (فقط اگر کاربر در تنظیمات فعال کرده باشد) -->
       <div v-if="showUnlockUi" class="unlock-block">
         <button
           v-if="!isUnlocking"
@@ -65,7 +64,11 @@
         </button>
       </div>
 
-      <form v-else class="login-form" @submit.prevent="onSubmit">
+      <form
+        v-else-if="!showNoBiometricModal && !isResolvingGate"
+        class="login-form"
+        @submit.prevent="onSubmit"
+      >
         <label class="field">
           <span>نام کاربری</span>
           <input
@@ -99,6 +102,25 @@
 
       <p v-if="showUnlockUi && errorMessage" class="error" role="alert">{{ errorMessage }}</p>
     </section>
+
+    <div
+      v-if="showNoBiometricModal"
+      class="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="no-bio-title"
+    >
+      <div class="modal-card">
+        <h2 id="no-bio-title">اثرانگشت تعریف نشده</h2>
+        <p>
+          برای باز کردن برنامه با اثرانگشت، ابتدا از تنظیمات گوشی یک اثرانگشت ثبت کنید. سپس می‌توانید دوباره
+          تلاش کنید.
+        </p>
+        <button type="button" class="btn primary" @click="usePasswordInstead">
+          ورود با نام کاربری و رمز عبور
+        </button>
+      </div>
+    </div>
   </main>
 </template>
 
@@ -106,13 +128,16 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { apiValidateToken } from '@/api/authApi'
-import { isAppLockEnabled, unlockWithBiometric } from '@/utils/appLock'
+import {
+  isAppLockEnabled,
+  resolveAppLockEntry,
+  unlockWithBiometric,
+} from '@/utils/appLock'
 import {
   beginPendingLogin,
   clearTokenSession,
   getAccessToken,
   getTokenUsername,
-  hasStoredToken,
   isLoggedIn,
   isSessionUnlocked,
   markSessionUnlocked,
@@ -131,23 +156,22 @@ const isSubmitting = ref(false)
 const isUnlocking = ref(false)
 const unlockStatus = ref('انگشت خود را روی حسگر قرار دهید...')
 const forcePasswordForm = ref(false)
+const showUnlockUi = ref(false)
+const showNoBiometricModal = ref(false)
+const isResolvingGate = ref(true)
 const { isOnline } = useConnectivity()
 
 const showConnectivity = computed(() => isFeatureEnabled('connectivityIndicator'))
 const offlineMessage = computed(() => appConfig.value.connectivity.offlineMessage)
 
-const showUnlockUi = computed(() => {
-  if (!isOnline.value) return false
-  if (forcePasswordForm.value) return false
-  if (!isFeatureEnabled('appLock')) return false
-  if (!hasStoredToken() || isSessionUnlocked()) return false
-  return isAppLockEnabled(getTokenUsername())
-})
-
 watch(
   () => appConfig.value?.features?.appLock,
   (enabled) => {
-    if (!enabled) forcePasswordForm.value = false
+    if (!enabled) {
+      forcePasswordForm.value = false
+      showNoBiometricModal.value = false
+      showUnlockUi.value = false
+    }
   },
 )
 
@@ -157,9 +181,27 @@ watch(isOnline, async (online) => {
     return
   }
   if (online) {
-    await triggerUnlockAutomatically()
+    await prepareEntryFlow()
+  } else {
+    showNoBiometricModal.value = false
+    showUnlockUi.value = false
   }
 })
+
+async function continueWithTokenCheck() {
+  const token = getAccessToken()
+  if (!token) return false
+
+  const result = await apiValidateToken(token)
+  if (!result.ok) {
+    clearTokenSession()
+    return false
+  }
+
+  markSessionUnlocked()
+  await router.replace({ name: 'home' })
+  return true
+}
 
 async function onSubmit() {
   errorMessage.value = ''
@@ -194,7 +236,7 @@ async function onSubmit() {
 }
 
 function onUnlock() {
-  if (isUnlocking.value) return
+  if (isUnlocking.value || !showUnlockUi.value) return
 
   errorMessage.value = ''
   if (!isOnline.value) {
@@ -205,6 +247,7 @@ function onUnlock() {
   const token = getAccessToken()
   if (!token) {
     forcePasswordForm.value = true
+    showUnlockUi.value = false
     return
   }
 
@@ -219,6 +262,7 @@ function onUnlock() {
       if (!result.ok) {
         clearTokenSession()
         forcePasswordForm.value = true
+        showUnlockUi.value = false
         errorMessage.value = 'نشست منقضی شده است. دوباره وارد شوید.'
         return
       }
@@ -238,12 +282,13 @@ function onUnlock() {
 }
 
 function usePasswordInstead() {
+  showNoBiometricModal.value = false
+  showUnlockUi.value = false
   clearTokenSession()
   forcePasswordForm.value = true
   errorMessage.value = ''
 }
 
-/** پیش‌فرض: با باز شدن صفحه، دیالوگ اثرانگشت خودکار باز شود */
 async function triggerUnlockAutomatically() {
   if (!isOnline.value || !showUnlockUi.value || isUnlocking.value) return
   await nextTick()
@@ -252,15 +297,67 @@ async function triggerUnlockAutomatically() {
   }, 120)
 }
 
+/**
+ * ۱ تنظیمات → ۲ پشتیبانی دستگاه → ۳ وجود اثرانگشت
+ * قفل خاموش + توکن → فقط apiValidateToken (بدون فرم)
+ */
+async function prepareEntryFlow() {
+  isResolvingGate.value = true
+  showNoBiometricModal.value = false
+  showUnlockUi.value = false
+  errorMessage.value = ''
+
+  try {
+    if (!isOnline.value || forcePasswordForm.value) {
+      return
+    }
+
+    if (isLoggedIn()) {
+      await router.replace({ name: 'home' })
+      return
+    }
+
+    const token = getAccessToken()
+    if (!token || isSessionUnlocked()) {
+      return
+    }
+
+    // قابلیت محصول خاموش یا کاربر قفل را فعال نکرده → فقط چک توکن
+    if (!isFeatureEnabled('appLock') || !isAppLockEnabled(getTokenUsername())) {
+      await continueWithTokenCheck()
+      return
+    }
+
+    const entry = await resolveAppLockEntry(getTokenUsername())
+
+    if (entry === 'none') {
+      await continueWithTokenCheck()
+      return
+    }
+
+    if (entry === 'password') {
+      // شرط ۱/۲ رد شد → فرم لاگین (مرحله ۳ چک نشده)
+      forcePasswordForm.value = true
+      return
+    }
+
+    if (entry === 'modal') {
+      // ۱ و ۲ اوکی، ۳ نه
+      showNoBiometricModal.value = true
+      return
+    }
+
+    // هر سه اوکی → اثرانگشت، بعد چک توکن
+    showUnlockUi.value = true
+    await triggerUnlockAutomatically()
+  } finally {
+    isResolvingGate.value = false
+  }
+}
+
 onMounted(async () => {
   document.documentElement.classList.add('login-no-scroll')
-
-  if (isOnline.value && isLoggedIn()) {
-    await router.replace({ name: 'home' })
-    return
-  }
-
-  await triggerUnlockAutomatically()
+  await prepareEntryFlow()
 })
 
 onUnmounted(() => {
@@ -445,6 +542,44 @@ onUnmounted(() => {
   color: #fda4af;
   font-size: 0.88rem;
   text-align: center;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(2, 6, 23, 0.65);
+}
+
+.modal-card {
+  width: min(100%, 360px);
+  padding: 1.15rem 1.1rem;
+  border-radius: 1rem;
+  background: #0f172a;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: #e2e8f0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.modal-card h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  color: #f8fafc;
+}
+
+.modal-card p {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: #94a3b8;
+}
+
+.modal-card .btn {
+  width: 100%;
 }
 
 @keyframes spin {

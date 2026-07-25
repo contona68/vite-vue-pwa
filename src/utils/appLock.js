@@ -9,6 +9,7 @@ import {
   createPlatformCredential,
   createRandomChallenge,
   getPlatformAssertion,
+  isPlatformBiometricAvailable,
   isWebAuthnSupported,
 } from '@/utils/webAuthn'
 
@@ -45,6 +46,38 @@ export function getAppLockUsername() {
 }
 
 /**
+ * تصمیم ورودی قفل اثرانگشت (ترتیب ثابت)
+ * ۱) تنظیمات کاربر
+ * ۲) پشتیبانی دستگاه/مرورگر
+ * ۳) وجود بیومتریک روی دستگاه
+ *
+ * @returns {'none' | 'password' | 'modal' | 'biometric'}
+ * - none: قفل در تنظیمات خاموش → فقط اعتبارسنجی توکن (بدون فرم/مودال/اثرانگشت)
+ * - password: شرط ۱ یا ۲ رد شد → فرم نام کاربری/رمز
+ * - modal: ۱ و ۲ اوکی، ۳ نه
+ * - biometric: هر سه اوکی
+ */
+export async function resolveAppLockEntry(username) {
+  // ۱
+  if (!isAppLockEnabled(username)) {
+    return 'none'
+  }
+
+  // ۲ — اگر رد شود مرحله ۳ چک نمی‌شود
+  if (!isAppLockSupported()) {
+    return 'password'
+  }
+
+  // ۳
+  const hasBiometric = await isPlatformBiometricAvailable()
+  if (!hasBiometric) {
+    return 'modal'
+  }
+
+  return 'biometric'
+}
+
+/**
  * ذخیره ترجیح قفل — بدون فراخوانی WebAuthn / بدون دیالوگ اثرانگشت
  */
 export function enableAppLock(username) {
@@ -61,7 +94,6 @@ export function enableAppLock(username) {
   writePref({
     enabled: true,
     username: userKey,
-    // اگر همان کاربر بود credential قبلی را نگه می‌داریم؛ وگرنه پاک می‌شود تا در ورود بعدی ثبت شود
     credentialId:
       prev.username.toLowerCase() === userKey.toLowerCase() ? prev.credentialId || '' : '',
     enabledAt: new Date().toISOString(),
@@ -114,7 +146,6 @@ export async function unlockWithBiometric() {
     throw new Error('نام کاربری قفل یافت نشد.')
   }
 
-  // هنوز ثبت نشده → فقط create (یک‌بار اثرانگشت)
   if (!pref.credentialId) {
     await ensureLocalCredential(username)
     return { ok: true, username }
