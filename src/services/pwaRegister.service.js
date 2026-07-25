@@ -1,10 +1,11 @@
 import { needRefresh, setUpdateHandler } from '@/pwa/updateState'
+import { projectPwaConfig } from '@/config/pwa.runtime'
 import { isFeatureEnabled } from '@/services/appConfig.service'
 
-/** ثبت PWA / SW بر اساس کانفیگ runtime */
+/** ثبت PWA / SW بر اساس کانفیگ ثابت پروژه */
 export async function setupPwaRuntime() {
-  if (!isFeatureEnabled('pwaRuntime')) {
-    console.info('[PWA] Runtime registration skipped by config')
+  if (!projectPwaConfig.runtimeRegistration) {
+    console.info('[PWA] Runtime registration skipped by project config')
     return
   }
 

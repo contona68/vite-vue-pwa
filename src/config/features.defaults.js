@@ -1,7 +1,5 @@
 /** پیش‌فرض فلگ‌های فیچر (قابل override از API/localStorage) */
 export const featuresDefaults = {
-  /** ثبت Service Worker در runtime */
-  pwaRuntime: true,
   /** بنر نصب PWA */
   installBanner: true,
   /** بنر بروزرسانی */

@@ -51,10 +51,12 @@ export default defineConfig({
         scope: './',
         start_url: './login',
         prefer_related_applications: false,
+        // برای تشخیص نصب روی موبایل و دسکتاپ (getInstalledRelatedApps)
         related_applications: [
           {
             platform: 'webapp',
-            url: 'https://contona68.github.io/vite-vue-pwa/manifest.webmanifest',
+            url: 'manifest.webmanifest',
+            id: './login',
           },
         ],
         icons: [

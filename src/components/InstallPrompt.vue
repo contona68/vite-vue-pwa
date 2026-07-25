@@ -108,6 +108,7 @@ import {
   isIosDevice,
   isIosSafari,
   isPwaAlreadyInstalled,
+  isStandaloneMode,
   markPwaInstalled,
   setLoadsSinceDismiss,
   shouldHideByDismissPolicy,
@@ -144,6 +145,16 @@ function hideBanner() {
   visible.value = false
 }
 
+async function refreshInstalledState() {
+  alreadyInstalled = await isPwaAlreadyInstalled()
+  if (alreadyInstalled) {
+    deferredPrompt = null
+    clearManualGuideTimer()
+    hideBanner()
+  }
+  return alreadyInstalled
+}
+
 function showNativeInstallBanner() {
   if (!canShowBanner() || !deferredPrompt) {
     hideBanner()
@@ -153,9 +164,10 @@ function showNativeInstallBanner() {
   visible.value = true
 }
 
-function showManualGuideBanner() {
+async function showManualGuideBanner() {
   // اگر نصب native در دسترس است/شده، هرگز راهنمای «دکمه ندارد» را نشان نده
   if (nativeInstallReady || deferredPrompt) return
+  if (await refreshInstalledState()) return
   if (!canShowBanner()) {
     hideBanner()
     return
@@ -170,8 +182,12 @@ function clearManualGuideTimer() {
   manualGuideTimer = null
 }
 
-function onBeforeInstallPrompt(event) {
+async function onBeforeInstallPrompt(event) {
   event.preventDefault()
+
+  // اگر از قبل نصب است، بنر را نشان نده
+  if (await refreshInstalledState()) return
+
   deferredPrompt = event
   nativeInstallReady = true
   clearManualGuideTimer()
@@ -190,6 +206,14 @@ function onAppInstalled() {
   deferredPrompt = null
   clearManualGuideTimer()
   hideBanner()
+}
+
+function onDisplayModeChange() {
+  if (isStandaloneMode()) {
+    alreadyInstalled = true
+    markPwaInstalled()
+    hideBanner()
+  }
 }
 
 function dismiss() {
@@ -214,21 +238,24 @@ async function install() {
   }
 }
 
+const standaloneMedia = window.matchMedia('(display-mode: standalone)')
+const fullscreenMedia = window.matchMedia('(display-mode: fullscreen)')
+const minimalUiMedia = window.matchMedia('(display-mode: minimal-ui)')
+
 onMounted(async () => {
-  alreadyInstalled = await isPwaAlreadyInstalled()
-  if (alreadyInstalled) {
-    hideBanner()
-    return
-  }
+  if (await refreshInstalledState()) return
 
   incrementDismissLoadCount()
 
   window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt)
   window.addEventListener('appinstalled', onAppInstalled)
+  standaloneMedia.addEventListener('change', onDisplayModeChange)
+  fullscreenMedia.addEventListener('change', onDisplayModeChange)
+  minimalUiMedia.addEventListener('change', onDisplayModeChange)
 
-  // iOS: رویداد نصب ندارد → راهنمای Share
+  // iOS: رویداد نصب ندارد → راهنمای Share (فقط اگر هنوز نصب نشده)
   if (onIos) {
-    showManualGuideBanner()
+    await showManualGuideBanner()
     return
   }
 
@@ -237,7 +264,7 @@ onMounted(async () => {
     return
   }
 
-  // دسکتاپ بدون beforeinstallprompt → بعد از تأخیر، راهنمای دستی
+  // دسکتاپ بدون beforeinstallprompt → بعد از تأخیر، فقط اگر واقعاً نصب نباشد
   manualGuideTimer = window.setTimeout(() => {
     manualGuideTimer = null
     if (nativeInstallReady || deferredPrompt || visible.value) return
@@ -249,6 +276,9 @@ onUnmounted(() => {
   clearManualGuideTimer()
   window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt)
   window.removeEventListener('appinstalled', onAppInstalled)
+  standaloneMedia.removeEventListener('change', onDisplayModeChange)
+  fullscreenMedia.removeEventListener('change', onDisplayModeChange)
+  minimalUiMedia.removeEventListener('change', onDisplayModeChange)
 })
 </script>
 

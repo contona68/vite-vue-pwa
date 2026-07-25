@@ -20,6 +20,7 @@ export function isStandaloneMode() {
     window.matchMedia('(display-mode: standalone)').matches ||
     window.matchMedia('(display-mode: fullscreen)').matches ||
     window.matchMedia('(display-mode: minimal-ui)').matches ||
+    window.matchMedia('(display-mode: window-controls-overlay)').matches ||
     window.navigator.standalone === true ||
     document.referrer.includes('android-app://')
   )
@@ -68,27 +69,37 @@ export function incrementDismissLoadCount() {
   setLoadsSinceDismiss(loads + 1)
 }
 
+function isRelatedWebAppInstalled(relatedApps) {
+  if (!Array.isArray(relatedApps) || relatedApps.length === 0) return false
+  return relatedApps.some((app) => !app.platform || app.platform === 'webapp')
+}
+
+/**
+ * آیا PWA از قبل روی دستگاه نصب است؟
+ * موبایل + دسکتاپ: standalone، فلگ محلی، getInstalledRelatedApps
+ */
 export async function isPwaAlreadyInstalled() {
   if (isStandaloneMode()) {
     markPwaInstalled()
     return true
   }
 
-  if (hasInstalledFlag()) {
-    return true
-  }
-
   if ('getInstalledRelatedApps' in navigator) {
     try {
       const relatedApps = await navigator.getInstalledRelatedApps()
-      if (relatedApps.length > 0) {
+      if (isRelatedWebAppInstalled(relatedApps)) {
         markPwaInstalled()
         return true
       }
+      // API در دسترس است و می‌گوید نصب نیست → فلگ کهنه را پاک کن
+      if (hasInstalledFlag()) {
+        clearPwaInstalledFlag()
+      }
+      return false
     } catch (_) {
-      // برخی مرورگرها پشتیبانی ناقص دارند
+      // پشتیبانی ناقص — به فلگ محلی برمی‌گردیم
     }
   }
 
-  return false
+  return hasInstalledFlag()
 }

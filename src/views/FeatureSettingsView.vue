@@ -1,64 +1,63 @@
 <template>
-  <main class="page settings-page">
-    <section class="settings-card" aria-labelledby="settings-title">
+  <main class="page">
+    <AppNav />
+    <section class="content">
       <h1 id="settings-title">تنظیمات</h1>
-      <p class="lead">
-        تغییر هر گزینه بلافاصله اعمال می‌شود و روی ورود، OTP و نمایش بنرها اثر می‌گذارد.
-      </p>
 
-      <p v-if="errorMessage" class="error" role="alert">{{ errorMessage }}</p>
-      <p v-if="successMessage" class="success" role="status">{{ successMessage }}</p>
+      <form class="settings-form" @submit.prevent="onSave">
+        <p v-if="errorMessage" class="error" role="alert">{{ errorMessage }}</p>
+        <p v-if="successMessage" class="success" role="status">{{ successMessage }}</p>
 
-      <ul class="feature-list">
-        <li v-for="item in visibleFeatureItems" :key="item.key">
-          <div class="feature-text">
-            <strong>{{ item.title }}</strong>
-            <span>{{ item.description }}</span>
-          </div>
-          <label class="switch">
-            <input
-              type="checkbox"
-              :checked="draftFeatures[item.key]"
-              :disabled="saving"
-              @change="onFeatureToggle(item.key, $event.target.checked)"
-            />
-            <span class="slider" />
-          </label>
-        </li>
+        <ul class="feature-list">
+          <li v-for="item in featureItems" :key="item.key">
+            <div class="feature-text">
+              <strong>{{ item.title }}</strong>
+              <span>{{ item.description }}</span>
+            </div>
+            <label class="switch">
+              <input
+                type="checkbox"
+                :checked="draftFeatures[item.key]"
+                :disabled="saving"
+                @change="onFeatureToggle(item.key, $event.target.checked)"
+              />
+              <span class="slider" />
+            </label>
+          </li>
 
-        <!-- فعال‌سازی قفل اثرانگشت فقط اگر دستگاه پشتیبانی کند -->
-        <li v-if="canShowAppLockToggle">
-          <div class="feature-text">
-            <strong>قفل اثرانگشت</strong>
-            <span>
-              فعال‌سازی قفل محلی با اثرانگشت. اگر خاموش باشد در صفحه ورود چیزی نشان داده نمی‌شود.
-            </span>
-          </div>
-          <label class="switch">
-            <input
-              type="checkbox"
-              :checked="appLockUserEnabled"
-              :disabled="saving || lockBusy"
-              @change="onAppLockToggle($event.target.checked)"
-            />
-            <span class="slider" />
-          </label>
-        </li>
-      </ul>
+          <li v-if="canShowAppLockToggle">
+            <div class="feature-text">
+              <strong>قفل اثرانگشت</strong>
+              <span>با روشن بودن، دفعه بعد برای باز کردن برنامه اثرانگشت می‌خواهیم.</span>
+            </div>
+            <label class="switch">
+              <input
+                type="checkbox"
+                :checked="draftAppLockEnabled"
+                :disabled="saving"
+                @change="onAppLockToggle($event.target.checked)"
+              />
+              <span class="slider" />
+            </label>
+          </li>
+        </ul>
 
-      <p v-if="lockBusy" class="hint" aria-live="polite">انگشت خود را روی حسگر قرار دهید...</p>
-
-      <div class="actions">
-        <button type="button" class="btn ghost" :disabled="saving || lockBusy" @click="onReset">
-          بازگشت به پیش‌فرض
-        </button>
-      </div>
+        <div class="actions">
+          <button type="button" class="btn ghost" :disabled="saving" @click="onReset">
+            بازگشت به پیش‌فرض
+          </button>
+          <button type="submit" class="btn primary" :disabled="saving || !dirty">
+            {{ saving ? 'در حال ذخیره...' : 'ذخیره' }}
+          </button>
+        </div>
+      </form>
     </section>
   </main>
 </template>
 
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import AppNav from '@/components/AppNav.vue'
 import {
   appConfig,
   isFeatureEnabled,
@@ -76,36 +75,31 @@ import { getTokenUsername } from '@/utils/auth'
 
 const featureItems = [
   {
-    key: 'pwaRuntime',
-    title: 'PWA Runtime',
-    description: 'ثبت Service Worker هنگام اجرای اپ (برای اثر کامل ممکن است رفرش لازم باشد).',
-  },
-  {
     key: 'installBanner',
-    title: 'بنر نصب',
-    description: 'نمایش پیشنهاد نصب برنامه روی دستگاه.',
+    title: 'پیشنهاد نصب برنامه',
+    description: 'اگر برنامه روی گوشی نصب نباشد، پیام نصب را نشان بده.',
   },
   {
     key: 'updateBanner',
-    title: 'بنر بروزرسانی',
-    description: 'نمایش پیام نسخه جدید Service Worker.',
+    title: 'اطلاع نسخه جدید',
+    description: 'وقتی نسخه تازه‌ای آماده باشد، پیام بروزرسانی را نشان بده.',
   },
   {
     key: 'connectivityIndicator',
-    title: 'وضعیت اتصال',
-    description: 'نمایش آیکون وای‌فای و پیام آفلاین در صفحه ورود.',
+    title: 'وضعیت اینترنت',
+    description: 'در صفحه ورود، آنلاین یا آفلاین بودن را نشان بده.',
   },
   {
     key: 'otp',
-    title: 'ورود دومرحله‌ای (OTP)',
-    description: 'اگر خاموش باشد، بعد از نام کاربری و رمز، توکن همان‌جا صادر می‌شود.',
+    title: 'ورود دو مرحله‌ای',
+    description: 'بعد از نام کاربری و رمز، از کد پیامک ارسالی هم استفاده می‌شود.',
   },
 ]
 
 const draftFeatures = reactive({})
+const draftAppLockEnabled = ref(false)
+const dirty = ref(false)
 const saving = ref(false)
-const lockBusy = ref(false)
-const appLockUserEnabled = ref(false)
 const errorMessage = ref('')
 const successMessage = ref('')
 
@@ -115,66 +109,52 @@ const canShowAppLockToggle = computed(
   () => isFeatureEnabled('appLock') && isAppLockSupported(),
 )
 
-const visibleFeatureItems = computed(() => featureItems)
-
 function syncDraftFromConfig() {
   Object.keys(sourceFeatures.value || {}).forEach((key) => {
     draftFeatures[key] = Boolean(sourceFeatures.value[key])
   })
+  draftAppLockEnabled.value = isAppLockEnabled(getTokenUsername())
+  dirty.value = false
 }
 
-function syncAppLockState() {
-  appLockUserEnabled.value = isAppLockEnabled(getTokenUsername())
-}
-
-async function onFeatureToggle(key, checked) {
+function onFeatureToggle(key, checked) {
   draftFeatures[key] = checked
+  dirty.value = true
+  successMessage.value = ''
+}
+
+function onAppLockToggle(checked) {
+  draftAppLockEnabled.value = checked
+  dirty.value = true
+  successMessage.value = ''
+}
+
+async function onSave() {
   errorMessage.value = ''
   successMessage.value = ''
   saving.value = true
+
   try {
-    await updateFeatureFlags({ [key]: checked })
-    successMessage.value = 'اعمال شد.'
+    await updateFeatureFlags({ ...draftFeatures })
+
+    if (canShowAppLockToggle.value) {
+      if (draftAppLockEnabled.value) {
+        const username = getTokenUsername()
+        if (!username) {
+          throw new Error('برای فعال‌سازی قفل باید وارد حساب شده باشید.')
+        }
+        enableAppLock(username)
+      } else {
+        disableAppLock()
+      }
+    }
+
+    dirty.value = false
+    successMessage.value = 'تنظیمات ذخیره شد.'
   } catch (error) {
-    draftFeatures[key] = !checked
     errorMessage.value = error?.message || 'ذخیره تنظیمات ناموفق بود.'
   } finally {
     saving.value = false
-  }
-}
-
-async function onAppLockToggle(checked) {
-  errorMessage.value = ''
-  successMessage.value = ''
-
-  if (!checked) {
-    disableAppLock()
-    appLockUserEnabled.value = false
-    successMessage.value = 'قفل اثرانگشت غیرفعال شد.'
-    return
-  }
-
-  const username = getTokenUsername()
-  if (!username) {
-    appLockUserEnabled.value = false
-    errorMessage.value = 'برای فعال‌سازی قفل باید وارد حساب شده باشید.'
-    return
-  }
-
-  lockBusy.value = true
-  try {
-    await enableAppLock(username)
-    appLockUserEnabled.value = true
-    successMessage.value = 'قفل اثرانگشت فعال شد.'
-  } catch (error) {
-    appLockUserEnabled.value = false
-    if (error?.name === 'NotAllowedError') {
-      errorMessage.value = 'تأیید اثرانگشت انجام نشد.'
-    } else {
-      errorMessage.value = error?.message || 'فعال‌سازی قفل ناموفق بود.'
-    }
-  } finally {
-    lockBusy.value = false
   }
 }
 
@@ -186,7 +166,6 @@ async function onReset() {
     await resetAppConfig()
     disableAppLock()
     syncDraftFromConfig()
-    syncAppLockState()
     successMessage.value = 'تنظیمات به حالت پیش‌فرض برگشت.'
   } catch (error) {
     errorMessage.value = error?.message || 'بازنشانی ناموفق بود.'
@@ -200,41 +179,34 @@ onMounted(async () => {
     await loadAppConfig()
   }
   syncDraftFromConfig()
-  syncAppLockState()
 })
 
 watch(sourceFeatures, () => {
-  syncDraftFromConfig()
+  if (!dirty.value) syncDraftFromConfig()
 })
 </script>
 
 <style scoped>
-.settings-page {
-  min-height: calc(100dvh - 4rem);
-  padding: 1.25rem;
-  background: #0f172a;
+.page {
+  min-height: 100dvh;
+  background: #f1f5f9;
 }
 
-.settings-card {
-  width: min(100%, 720px);
+.content {
+  max-width: 720px;
   margin: 0 auto;
-  padding: 1.25rem;
-  border-radius: 1rem;
-  background: rgba(15, 23, 42, 0.85);
-  border: 1px solid rgba(148, 163, 184, 0.25);
-  color: #e2e8f0;
+  padding: 0.85rem 0.85rem 1rem;
 }
 
 h1 {
-  margin: 0;
-  font-size: 1.35rem;
+  margin: 0 0 0.55rem;
+  color: #0f172a;
+  font-size: 1.2rem;
 }
 
-.lead {
-  margin: 0.55rem 0 1.1rem;
-  color: #94a3b8;
-  font-size: 0.9rem;
-  line-height: 1.6;
+.settings-form {
+  display: grid;
+  gap: 0.55rem;
 }
 
 .feature-list {
@@ -242,39 +214,42 @@ h1 {
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 0.75rem;
+  gap: 0.3rem;
 }
 
 .feature-list li {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 0.85rem 0.95rem;
-  border-radius: 0.85rem;
-  background: rgba(2, 6, 23, 0.45);
-  border: 1px solid rgba(148, 163, 184, 0.2);
+  gap: 0.65rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 0.55rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
 }
 
 .feature-text {
   display: grid;
-  gap: 0.25rem;
+  gap: 0.05rem;
+  min-width: 0;
 }
 
 .feature-text strong {
-  font-size: 0.95rem;
+  color: #0f172a;
+  font-size: 0.88rem;
+  line-height: 1.25;
 }
 
 .feature-text span {
-  color: #94a3b8;
-  font-size: 0.8rem;
-  line-height: 1.5;
+  color: #64748b;
+  font-size: 0.72rem;
+  line-height: 1.3;
 }
 
 .switch {
   position: relative;
-  width: 46px;
-  height: 28px;
+  width: 40px;
+  height: 24px;
   flex-shrink: 0;
 }
 
@@ -288,7 +263,7 @@ h1 {
   position: absolute;
   inset: 0;
   border-radius: 999px;
-  background: #334155;
+  background: #cbd5e1;
   cursor: pointer;
   transition: 0.2s ease;
 }
@@ -296,13 +271,14 @@ h1 {
 .slider::before {
   content: '';
   position: absolute;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   left: 3px;
   top: 3px;
   border-radius: 50%;
   background: #fff;
   transition: 0.2s ease;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.18);
 }
 
 .switch input:checked + .slider {
@@ -310,50 +286,52 @@ h1 {
 }
 
 .switch input:checked + .slider::before {
-  transform: translateX(18px);
+  transform: translateX(16px);
 }
 
 .actions {
-  margin-top: 1.1rem;
   display: flex;
   justify-content: flex-end;
-  gap: 0.55rem;
+  gap: 0.4rem;
   flex-wrap: wrap;
+  margin-top: 0.15rem;
 }
 
 .btn {
   border: 0;
-  border-radius: 0.7rem;
-  padding: 0.65rem 0.95rem;
+  border-radius: 0.55rem;
+  padding: 0.45rem 0.9rem;
   font: inherit;
+  font-size: 0.88rem;
   font-weight: 600;
   cursor: pointer;
 }
 
+.btn.primary {
+  background: #0ea5e9;
+  color: #fff;
+}
+
 .btn.ghost {
-  background: transparent;
-  color: #cbd5e1;
-  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: #fff;
+  color: #334155;
+  border: 1px solid #cbd5e1;
 }
 
 .btn:disabled {
-  opacity: 0.65;
-  cursor: wait;
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .error {
-  color: #fda4af;
-  font-size: 0.88rem;
+  margin: 0;
+  color: #be123c;
+  font-size: 0.8rem;
 }
 
 .success {
-  color: #86efac;
-  font-size: 0.88rem;
-}
-
-.hint {
-  margin: 0.75rem 0 0;
-  color: #7dd3fc;
-  font-size: 0.88rem;
+  margin: 0;
+  color: #15803d;
+  font-size: 0.8rem;
 }
 </style>
