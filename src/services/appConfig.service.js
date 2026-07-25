@@ -3,52 +3,26 @@ import { apiFetchAppConfig, apiResetAppConfig, apiUpdateAppConfig } from '@/api/
 import { createDefaultAppConfig } from '@/config'
 
 const configState = ref(createDefaultAppConfig())
-const loaded = ref(false)
-const loading = ref(false)
 
 export const appConfig = computed(() => configState.value)
-export const isAppConfigLoaded = computed(() => loaded.value)
-export const isAppConfigLoading = computed(() => loading.value)
 
 export function isFeatureEnabled(featureKey) {
   return Boolean(configState.value?.features?.[featureKey])
 }
 
 export async function loadAppConfig() {
-  loading.value = true
-  try {
-    configState.value = await apiFetchAppConfig()
-    loaded.value = true
-    return configState.value
-  } finally {
-    loading.value = false
-  }
-}
-
-export async function updateAppConfig(partialConfig) {
-  loading.value = true
-  try {
-    configState.value = await apiUpdateAppConfig(partialConfig)
-    loaded.value = true
-    return configState.value
-  } finally {
-    loading.value = false
-  }
+  configState.value = await apiFetchAppConfig()
+  return configState.value
 }
 
 export async function updateFeatureFlags(featuresPatch) {
-  return updateAppConfig({ features: featuresPatch })
+  configState.value = await apiUpdateAppConfig({ features: featuresPatch })
+  return configState.value
 }
 
 export async function resetAppConfig() {
-  loading.value = true
-  try {
-    configState.value = await apiResetAppConfig()
-    loaded.value = true
-    return configState.value
-  } finally {
-    loading.value = false
-  }
+  configState.value = await apiResetAppConfig()
+  return configState.value
 }
 
 export function applySplashFromConfig() {

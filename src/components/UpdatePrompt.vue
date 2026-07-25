@@ -20,9 +20,9 @@
 import { computed } from 'vue'
 import { applyPwaUpdate, dismissPwaUpdate, needRefresh } from '@/pwa/updateState'
 import { appConfig } from '@/services/appConfig.service'
-import { publicUrl } from '@/utils/publicUrl'
+import { APP_ICON_192 } from '@/utils/publicUrl'
 
-const appIcon = publicUrl('icons/android-chrome-192x192.png')
+const appIcon = APP_ICON_192
 const pwaUi = computed(() => appConfig.value.pwaUi)
 
 function onUpdate() {

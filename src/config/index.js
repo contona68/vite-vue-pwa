@@ -1,10 +1,9 @@
 import { brandingDefaults } from './branding.defaults'
 import { connectivityDefaults } from './connectivity.defaults'
 import { featuresDefaults } from './features.defaults'
-import { projectPwaConfig } from './pwa.runtime'
 import { pwaUiDefaults } from './pwaUi.defaults'
 
-/** کانفیگ پیش‌فرض کامل اپ */
+/** کانفیگ پیش‌فرض کامل اپ (قابل override از API/localStorage) */
 export function createDefaultAppConfig() {
   return {
     features: { ...featuresDefaults },
@@ -12,12 +11,4 @@ export function createDefaultAppConfig() {
     pwaUi: { ...pwaUiDefaults },
     connectivity: { ...connectivityDefaults },
   }
-}
-
-export {
-  brandingDefaults,
-  connectivityDefaults,
-  featuresDefaults,
-  projectPwaConfig,
-  pwaUiDefaults,
 }

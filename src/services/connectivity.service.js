@@ -18,5 +18,5 @@ export function useConnectivity() {
     window.removeEventListener('offline', sync)
   })
 
-  return { isOnline, syncOnlineStatus: sync }
+  return { isOnline }
 }

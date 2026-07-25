@@ -1,6 +1,6 @@
 const INSTALLED_KEY = 'pwa-app-installed'
 const DISMISS_LOADS_KEY = 'pwa-install-loads-since-dismiss'
-export const SHOW_EVERY_N_LOADS = 5
+const SHOW_EVERY_N_LOADS = 5
 
 export function markPwaInstalled() {
   localStorage.setItem(INSTALLED_KEY, '1')
@@ -91,7 +91,6 @@ export async function isPwaAlreadyInstalled() {
         markPwaInstalled()
         return true
       }
-      // API در دسترس است و می‌گوید نصب نیست → فلگ کهنه را پاک کن
       if (hasInstalledFlag()) {
         clearPwaInstalledFlag()
       }

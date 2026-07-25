@@ -58,10 +58,10 @@ import {
 } from '@/utils/auth'
 import { appConfig, isFeatureEnabled } from '@/services/appConfig.service'
 import { completeTokenLogin } from '@/services/login.service'
-import { publicUrl } from '@/utils/publicUrl'
+import { APP_ICON_192 } from '@/utils/publicUrl'
 import { isWebOtpSupported, normalizeOtpCode, waitForSmsOtp } from '@/utils/webOtp'
 
-const appIcon = publicUrl('icons/android-chrome-192x192.png')
+const appIcon = APP_ICON_192
 const router = useRouter()
 
 const otpDigits = ref(['', '', '', '', '', ''])

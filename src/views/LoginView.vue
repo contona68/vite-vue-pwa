@@ -33,7 +33,9 @@
       <div class="brand">
         <img :src="appIcon" alt="لوگوی اپ" width="64" height="64" />
         <h1 id="login-title">{{ showUnlockUi ? 'باز کردن برنامه' : 'ورود به حساب' }}</h1>
-        <p v-if="showUnlockUi" class="subtitle">برای ادامه، اثر انگشت خود را تأیید کنید.</p>
+        <p v-if="showUnlockUi" class="subtitle">
+          اثرانگشت را تأیید کنید. اگر پنجره بسته شد، روی آیکون بزنید.
+        </p>
       </div>
 
       <!-- قفل اثرانگشت (فقط اگر کاربر در تنظیمات فعال کرده باشد) -->
@@ -101,7 +103,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { apiValidateToken } from '@/api/authApi'
 import { isAppLockEnabled, unlockWithBiometric } from '@/utils/appLock'
@@ -118,9 +120,9 @@ import {
 import { appConfig, isFeatureEnabled } from '@/services/appConfig.service'
 import { useConnectivity } from '@/services/connectivity.service'
 import { completeTokenLogin } from '@/services/login.service'
-import { publicUrl } from '@/utils/publicUrl'
+import { APP_ICON_192 } from '@/utils/publicUrl'
 
-const appIcon = publicUrl('icons/android-chrome-192x192.png')
+const appIcon = APP_ICON_192
 const router = useRouter()
 const username = ref('')
 const password = ref('')
@@ -136,8 +138,7 @@ const offlineMessage = computed(() => appConfig.value.connectivity.offlineMessag
 
 const showUnlockUi = computed(() => {
   if (forcePasswordForm.value) return false
-  // خواندن appConfig برای واکنش‌پذیری به تغییر تنظیمات
-  if (!appConfig.value?.features?.appLock) return false
+  if (!isFeatureEnabled('appLock')) return false
   if (!hasStoredToken() || isSessionUnlocked()) return false
   return isAppLockEnabled(getTokenUsername())
 })
@@ -178,6 +179,8 @@ async function onSubmit() {
 }
 
 function onUnlock() {
+  if (isUnlocking.value) return
+
   errorMessage.value = ''
   const token = getAccessToken()
   if (!token) {
@@ -204,7 +207,7 @@ function onUnlock() {
     })
     .catch((error) => {
       if (error?.name === 'NotAllowedError') {
-        errorMessage.value = 'تأیید اثرانگشت انجام نشد.'
+        errorMessage.value = 'تأیید اثرانگشت انجام نشد. دوباره روی آیکون بزنید.'
       } else {
         errorMessage.value = error?.message || 'باز کردن برنامه ممکن نشد.'
       }
@@ -220,12 +223,24 @@ function usePasswordInstead() {
   errorMessage.value = ''
 }
 
+/** پیش‌فرض: با باز شدن صفحه، دیالوگ اثرانگشت خودکار باز شود */
+async function triggerUnlockAutomatically() {
+  if (!showUnlockUi.value || isUnlocking.value) return
+  await nextTick()
+  window.setTimeout(() => {
+    if (showUnlockUi.value && !isUnlocking.value) onUnlock()
+  }, 120)
+}
+
 onMounted(async () => {
   document.documentElement.classList.add('login-no-scroll')
 
   if (isLoggedIn()) {
     await router.replace({ name: 'home' })
+    return
   }
+
+  await triggerUnlockAutomatically()
 })
 
 onUnmounted(() => {

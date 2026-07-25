@@ -113,13 +113,13 @@ import {
   setLoadsSinceDismiss,
   shouldHideByDismissPolicy,
 } from '@/utils/pwaInstall'
-import { publicUrl } from '@/utils/publicUrl'
+import { APP_ICON_192 } from '@/utils/publicUrl'
 import { appConfig } from '@/services/appConfig.service'
 
 /** فقط برای دسکتاپ بدون beforeinstallprompt؛ اندروید صبر می‌کند تا رویداد نصب بیاید */
 const MANUAL_GUIDE_DELAY_MS = 2500
 
-const appIcon = publicUrl('icons/android-chrome-192x192.png')
+const appIcon = APP_ICON_192
 const visible = ref(false)
 const isGuide = ref(false)
 const onIos = isIosDevice()

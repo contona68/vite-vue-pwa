@@ -61,7 +61,6 @@ import AppNav from '@/components/AppNav.vue'
 import {
   appConfig,
   isFeatureEnabled,
-  loadAppConfig,
   resetAppConfig,
   updateFeatureFlags,
 } from '@/services/appConfig.service'
@@ -110,8 +109,8 @@ const canShowAppLockToggle = computed(
 )
 
 function syncDraftFromConfig() {
-  Object.keys(sourceFeatures.value || {}).forEach((key) => {
-    draftFeatures[key] = Boolean(sourceFeatures.value[key])
+  featureItems.forEach(({ key }) => {
+    draftFeatures[key] = Boolean(sourceFeatures.value?.[key])
   })
   draftAppLockEnabled.value = isAppLockEnabled(getTokenUsername())
   dirty.value = false
@@ -135,7 +134,11 @@ async function onSave() {
   saving.value = true
 
   try {
-    await updateFeatureFlags({ ...draftFeatures })
+    const featuresPatch = {}
+    featureItems.forEach(({ key }) => {
+      featuresPatch[key] = Boolean(draftFeatures[key])
+    })
+    await updateFeatureFlags(featuresPatch)
 
     if (canShowAppLockToggle.value) {
       if (draftAppLockEnabled.value) {
@@ -174,10 +177,7 @@ async function onReset() {
   }
 }
 
-onMounted(async () => {
-  if (!appConfig.value) {
-    await loadAppConfig()
-  }
+onMounted(() => {
   syncDraftFromConfig()
 })
 

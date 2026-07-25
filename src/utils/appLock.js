@@ -86,7 +86,6 @@ async function ensureLocalCredential(username) {
     userId: `applock:${username.toLowerCase()}`,
     userName: username,
     userDisplayName: username,
-    excludeCredentialIds: [],
   })
 
   const credentialId = attestation.rawId || attestation.id

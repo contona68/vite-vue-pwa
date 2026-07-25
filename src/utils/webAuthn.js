@@ -1,5 +1,5 @@
 /**
- * WebAuthn helpers (مرورگر)
+ * WebAuthn — فقط برای قفل محلی اثرانگشت (بدون ارسال به سرور)
  */
 
 function bufferToBase64Url(buffer) {
@@ -23,7 +23,7 @@ function base64UrlToBuffer(base64Url) {
   return bytes.buffer
 }
 
-export function getRpId() {
+function getRpId() {
   return window.location.hostname
 }
 
@@ -36,31 +36,18 @@ export function isWebAuthnSupported() {
   )
 }
 
-export async function isPlatformAuthenticatorAvailable() {
-  if (!isWebAuthnSupported()) return false
-  if (typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== 'function') {
-    return true
-  }
-  try {
-    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
-  } catch (_) {
-    // بعضی دستگاه‌ها false منفی می‌دهند؛ برای UI همچنان اجازه تلاش می‌دهیم
-    return true
-  }
-}
-
 export function createRandomChallenge(byteLength = 32) {
   const bytes = new Uint8Array(byteLength)
   crypto.getRandomValues(bytes)
   return bytes.buffer
 }
 
+/** ثبت credential پلتفرم؛ فقط id محلی لازم است */
 export async function createPlatformCredential({
   challenge,
   userId,
   userName,
   userDisplayName,
-  excludeCredentialIds = [],
 }) {
   const publicKey = {
     challenge,
@@ -85,22 +72,18 @@ export async function createPlatformCredential({
     attestation: 'none',
   }
 
-  // excludeCredentials را فقط در صورت نیاز می‌گذاریم؛ روی بعضی اندرویدها مشکل‌ساز است
-  if (excludeCredentialIds.length > 0) {
-    publicKey.excludeCredentials = excludeCredentialIds.map((id) => ({
-      type: 'public-key',
-      id: typeof id === 'string' ? base64UrlToBuffer(id) : id,
-    }))
-  }
-
   const credential = await navigator.credentials.create({ publicKey })
   if (!credential) {
     throw new Error('ساخت Passkey لغو شد یا ناموفق بود.')
   }
 
-  return serializeAttestation(credential)
+  return {
+    id: credential.id,
+    rawId: bufferToBase64Url(credential.rawId),
+  }
 }
 
+/** تأیید اثرانگشت محلی */
 export async function getPlatformAssertion({ challenge, allowCredentialIds = [] }) {
   const publicKey = {
     challenge,
@@ -121,69 +104,5 @@ export async function getPlatformAssertion({ challenge, allowCredentialIds = [] 
     throw new Error('احراز هویت با اثرانگشت لغو شد یا ناموفق بود.')
   }
 
-  return serializeAssertion(assertion)
+  return { ok: true, id: assertion.id }
 }
-
-function serializeAttestation(credential) {
-  const response = credential.response
-  let publicKey = null
-  let publicKeyAlgorithm = null
-  let transports = ['internal']
-
-  try {
-    if (typeof response.getPublicKey === 'function') {
-      const keyBuffer = response.getPublicKey()
-      if (keyBuffer) publicKey = bufferToBase64Url(keyBuffer)
-    }
-  } catch (error) {
-    console.warn('[WebAuthn] getPublicKey failed:', error)
-  }
-
-  try {
-    if (typeof response.getPublicKeyAlgorithm === 'function') {
-      publicKeyAlgorithm = response.getPublicKeyAlgorithm()
-    }
-  } catch (_) {
-    // ignore
-  }
-
-  try {
-    if (typeof response.getTransports === 'function') {
-      transports = response.getTransports() || ['internal']
-    }
-  } catch (_) {
-    // ignore
-  }
-
-  return {
-    id: credential.id,
-    rawId: bufferToBase64Url(credential.rawId),
-    type: credential.type,
-    authenticatorAttachment: credential.authenticatorAttachment || 'platform',
-    response: {
-      clientDataJSON: bufferToBase64Url(response.clientDataJSON),
-      attestationObject: bufferToBase64Url(response.attestationObject),
-      publicKey,
-      publicKeyAlgorithm,
-      transports,
-    },
-  }
-}
-
-function serializeAssertion(assertion) {
-  const response = assertion.response
-  return {
-    id: assertion.id,
-    rawId: bufferToBase64Url(assertion.rawId),
-    type: assertion.type,
-    authenticatorAttachment: assertion.authenticatorAttachment || 'platform',
-    response: {
-      clientDataJSON: bufferToBase64Url(response.clientDataJSON),
-      authenticatorData: bufferToBase64Url(response.authenticatorData),
-      signature: bufferToBase64Url(response.signature),
-      userHandle: response.userHandle ? bufferToBase64Url(response.userHandle) : null,
-    },
-  }
-}
-
-export { bufferToBase64Url, base64UrlToBuffer }

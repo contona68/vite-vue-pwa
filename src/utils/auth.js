@@ -15,16 +15,6 @@ export function getAccessToken() {
   return localStorage.getItem(TOKEN_KEY) || ''
 }
 
-export function getTokenUsername() {
-  try {
-    const raw = localStorage.getItem(TOKEN_META_KEY)
-    if (!raw) return ''
-    return JSON.parse(raw)?.username || ''
-  } catch (_) {
-    return ''
-  }
-}
-
 export function getTokenMeta() {
   try {
     const raw = localStorage.getItem(TOKEN_META_KEY)
@@ -32,6 +22,10 @@ export function getTokenMeta() {
   } catch (_) {
     return null
   }
+}
+
+export function getTokenUsername() {
+  return getTokenMeta()?.username || ''
 }
 
 export function hasStoredToken() {

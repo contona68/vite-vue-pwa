@@ -23,14 +23,6 @@ const routes = [
     meta: { title: 'تأیید پیامکی', public: true },
   },
   {
-    path: '/biometric-unlock',
-    redirect: { name: 'login' },
-  },
-  {
-    path: '/biometric-enroll',
-    redirect: { name: 'feature-settings' },
-  },
-  {
     path: '/home',
     name: 'home',
     component: () => import('@/views/HomeView.vue'),

@@ -4,12 +4,9 @@
  */
 
 import { createDefaultAppConfig } from '@/config'
+import { delay } from '@/utils/delay'
 
 const STORAGE_KEY = 'app_runtime_config_v1'
-
-function delay(ms = 120) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 function deepMerge(base, patch) {
   if (!patch || typeof patch !== 'object') return base
@@ -41,7 +38,7 @@ function writeToStorage(config) {
 
 /** معادل GET /api/app-config — فقط از storage می‌خواند */
 export async function apiFetchAppConfig() {
-  await delay()
+  await delay(120)
   const defaults = createDefaultAppConfig()
   const stored = readFromStorage()
   if (!stored) {
@@ -52,7 +49,7 @@ export async function apiFetchAppConfig() {
 
 /** معادل PUT /api/app-config — در storage ذخیره می‌کند تا GET بعدی همان را بخواند */
 export async function apiUpdateAppConfig(partialConfig) {
-  await delay()
+  await delay(120)
   const current = await apiFetchAppConfig()
   const next = deepMerge(current, partialConfig)
   writeToStorage(next)
@@ -60,7 +57,7 @@ export async function apiUpdateAppConfig(partialConfig) {
 }
 
 export async function apiResetAppConfig() {
-  await delay()
+  await delay(120)
   localStorage.removeItem(STORAGE_KEY)
   return createDefaultAppConfig()
 }
