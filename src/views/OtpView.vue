@@ -12,24 +12,26 @@
       </div>
 
       <form class="login-form" @submit.prevent="onSubmit">
-        <label class="field">
-          <span>کد یک‌بارمصرف</span>
+        <div class="otp-boxes" role="group" aria-label="کد تأیید ۶ رقمی">
           <input
-            ref="otpInputRef"
-            v-model="otpCode"
+            v-for="(digit, index) in otpDigits"
+            :key="index"
+            :ref="(el) => setOtpRef(el, index)"
+            class="otp-box"
             type="text"
-            name="one-time-code"
             inputmode="numeric"
             pattern="[0-9]*"
-            autocomplete="one-time-code"
-            maxlength="6"
-            placeholder="۶ رقم"
-            required
-            @input="onOtpInput"
+            maxlength="1"
+            :name="index === 0 ? 'one-time-code' : undefined"
+            :autocomplete="index === 0 ? 'one-time-code' : 'off'"
+            :value="digit"
+            :aria-label="`رقم ${index + 1}`"
+            @input="onDigitInput(index, $event)"
+            @keydown="onDigitKeydown(index, $event)"
+            @paste="onOtpPaste"
           />
-        </label>
+        </div>
 
-        <p v-if="hintMessage" class="hint">{{ hintMessage }}</p>
         <p v-if="errorMessage" class="error" role="alert">{{ errorMessage }}</p>
 
         <button class="btn primary" type="submit" :disabled="isSubmitting || otpCode.length < 6">
@@ -40,12 +42,6 @@
           بازگشت به ورود
         </button>
       </form>
-
-      <p class="offline-hint">
-        برای تست دمو فعلاً کد
-        <strong>{{ demoCode }}</strong>
-        را وارد کنید.
-      </p>
     </section>
   </main>
 </template>
@@ -67,52 +63,110 @@ import { isWebAuthnSupported } from '@/utils/webAuthn'
 import { isWebOtpSupported, normalizeOtpCode, waitForSmsOtp } from '@/utils/webOtp'
 
 const appIcon = publicUrl('icons/android-chrome-192x192.png')
-const demoCode = DEMO_OTP_CODE
 const router = useRouter()
 
-const otpInputRef = ref(null)
-const otpCode = ref('')
+const otpDigits = ref(['', '', '', '', '', ''])
+const otpInputRefs = ref([])
 const errorMessage = ref('')
-const statusMessage = ref('')
 const isSubmitting = ref(false)
 const webOtpActive = ref(false)
 
 const username = computed(() => getCurrentUser())
-const hintMessage = computed(() => {
-  if (statusMessage.value) return statusMessage.value
-  if (webOtpActive.value) {
-    return 'در حال انتظار برای دریافت خودکار کد از پیامک (Android)...'
-  }
-  if (isWebOtpSupported()) {
-    return 'پیشنهاد کد از پیامک فعال است (autocomplete + Web OTP).'
-  }
-  return 'پیشنهاد کد از صفحه‌کلید/پیامک با autocomplete فعال است (iOS/Android).'
-})
+const otpCode = computed(() => otpDigits.value.join(''))
 
 let otpAbortController = null
 
-function applyOtpToInput(rawCode) {
-  const digits = normalizeOtpCode(rawCode, 6)
-  otpCode.value = digits
-  errorMessage.value = ''
-
-  const input = otpInputRef.value
-  if (input) {
-    input.value = digits
-    input.dispatchEvent(new Event('input', { bubbles: true }))
+function setOtpRef(el, index) {
+  if (el) {
+    otpInputRefs.value[index] = el
   }
-
-  return digits
 }
 
-function onOtpInput(event) {
-  const digits = normalizeOtpCode(event.target.value || '', 6)
-  otpCode.value = digits
-  errorMessage.value = ''
-  statusMessage.value = ''
+function focusBox(index) {
+  const el = otpInputRefs.value[index]
+  if (el) {
+    el.focus()
+    el.select?.()
+  }
+}
 
-  if (digits.length === 6) {
+function applyOtpToBoxes(rawCode) {
+  const digits = normalizeOtpCode(rawCode, 6).split('')
+  const next = ['', '', '', '', '', '']
+  for (let i = 0; i < 6; i += 1) {
+    next[i] = digits[i] || ''
+  }
+  otpDigits.value = next
+  errorMessage.value = ''
+  return next.join('')
+}
+
+function onDigitInput(index, event) {
+  const raw = event.target.value || ''
+  const normalized = normalizeOtpCode(raw, 6)
+
+  if (normalized.length > 1) {
+    applyOtpToBoxes(normalized)
+    if (normalized.length >= 6) {
+      onSubmit()
+    } else {
+      focusBox(Math.min(normalized.length, 5))
+    }
+    return
+  }
+
+  const digit = normalized.slice(-1)
+  const next = [...otpDigits.value]
+  next[index] = digit
+  otpDigits.value = next
+  errorMessage.value = ''
+  event.target.value = digit
+
+  if (digit && index < 5) {
+    focusBox(index + 1)
+  }
+
+  if (next.join('').length === 6) {
     onSubmit()
+  }
+}
+
+function onDigitKeydown(index, event) {
+  if (event.key === 'Backspace') {
+    if (otpDigits.value[index]) {
+      const next = [...otpDigits.value]
+      next[index] = ''
+      otpDigits.value = next
+      return
+    }
+    if (index > 0) {
+      event.preventDefault()
+      const next = [...otpDigits.value]
+      next[index - 1] = ''
+      otpDigits.value = next
+      focusBox(index - 1)
+    }
+  }
+
+  if (event.key === 'ArrowLeft' && index > 0) {
+    event.preventDefault()
+    focusBox(index - 1)
+  }
+
+  if (event.key === 'ArrowRight' && index < 5) {
+    event.preventDefault()
+    focusBox(index + 1)
+  }
+}
+
+function onOtpPaste(event) {
+  event.preventDefault()
+  const text = event.clipboardData?.getData('text') || ''
+  const code = applyOtpToBoxes(text)
+  if (code.length === 6) {
+    onSubmit()
+  } else if (code.length > 0) {
+    focusBox(Math.min(code.length, 5))
   }
 }
 
@@ -131,7 +185,7 @@ async function goNextAfterOtp() {
       return
     }
   } catch (_) {
-    // اگر استور در دسترس نبود، باز هم مرحله فعال‌سازی را نشان می‌دهیم
+    // ignore
   }
 
   await router.replace({ name: 'biometric-enroll' })
@@ -140,7 +194,7 @@ async function goNextAfterOtp() {
 async function onSubmit() {
   errorMessage.value = ''
   const code = normalizeOtpCode(otpCode.value, 6)
-  otpCode.value = code
+  applyOtpToBoxes(code)
 
   if (code.length !== 6) {
     errorMessage.value = 'کد باید ۶ رقم باشد.'
@@ -185,21 +239,13 @@ async function startWebOtpListener() {
   stopWebOtpListener()
   otpAbortController = new AbortController()
   webOtpActive.value = true
-  statusMessage.value = ''
 
   try {
     const rawCode = await waitForSmsOtp(otpAbortController.signal)
     if (rawCode == null) return
 
-    const digits = applyOtpToInput(rawCode)
+    const digits = applyOtpToBoxes(rawCode)
     await nextTick()
-
-    if (!digits) {
-      statusMessage.value = 'پیامک دریافت شد ولی کد عددی از آن استخراج نشد.'
-      return
-    }
-
-    statusMessage.value = `کد از پیامک دریافت شد: ${digits}`
 
     if (digits.length === 6) {
       await onSubmit()
@@ -229,7 +275,7 @@ onMounted(async () => {
 
   document.documentElement.classList.add('login-no-scroll')
   await nextTick()
-  otpInputRef.value?.focus()
+  focusBox(0)
   startWebOtpListener()
 })
 
@@ -298,28 +344,28 @@ onUnmounted(() => {
   gap: 0.85rem;
 }
 
-.field {
+.otp-boxes {
   display: grid;
-  gap: 0.35rem;
-  color: #cbd5e1;
-  font-size: 0.9rem;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.45rem;
+  direction: ltr;
 }
 
-.field input {
+.otp-box {
   width: 100%;
+  aspect-ratio: 1;
   border: 1px solid rgba(148, 163, 184, 0.35);
   background: rgba(2, 6, 23, 0.55);
   color: #f8fafc;
-  border-radius: 0.75rem;
-  padding: 0.85rem 0.9rem;
+  border-radius: 0.7rem;
   font: inherit;
-  font-size: 1.35rem;
-  letter-spacing: 0.35em;
+  font-size: 1.25rem;
+  font-weight: 700;
   text-align: center;
   outline: none;
 }
 
-.field input:focus {
+.otp-box:focus {
   border-color: #38bdf8;
   box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
 }
@@ -349,28 +395,9 @@ onUnmounted(() => {
   cursor: wait;
 }
 
-.hint {
-  margin: 0;
-  color: #93c5fd;
-  font-size: 0.82rem;
-  line-height: 1.5;
-}
-
 .error {
   margin: 0;
   color: #fda4af;
   font-size: 0.88rem;
-}
-
-.offline-hint {
-  margin: 1rem 0 0;
-  text-align: center;
-  font-size: 0.8rem;
-  color: #64748b;
-}
-
-.offline-hint strong {
-  color: #fbbf24;
-  letter-spacing: 0.12em;
 }
 </style>

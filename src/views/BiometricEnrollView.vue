@@ -5,7 +5,7 @@
         <img :src="appIcon" alt="لوگوی اپ" width="56" height="56" />
         <h1 id="enroll-title">ورود سریع با اثرانگشت؟</h1>
         <p class="subtitle">
-          برای دفعات بعد می‌توانید بدون رمز و OTP، با اثر انگشت یا Face ID وارد شوید.
+          با فعال‌سازی ورود با اثر انگشت می‌توانید دفعات بعد بدون وارد کردن نام کاربری و رمز عبور و تأیید دومرحله‌ای وارد شوید.
           روی اثرانگشت بزنید تا فعال شود.
         </p>
       </div>
@@ -62,7 +62,7 @@
       <p v-if="enrollError" class="error" role="alert">{{ enrollError }}</p>
 
       <button type="button" class="skip-link" :disabled="isEnrolling" @click="skipEnroll">
-        فعلاً نه، برو به خانه
+        فعلاً نه
       </button>
     </section>
   </main>

@@ -1,13 +1,48 @@
 <template>
   <main class="page login-page">
+    <div class="connection-bar" aria-live="polite">
+      <span
+        class="wifi-icon"
+        :class="{ offline: !isOnline }"
+        :title="isOnline ? 'آنلاین' : 'آفلاین'"
+        :aria-label="isOnline ? 'اتصال اینترنت برقرار است' : 'اتصال اینترنت قطع است'"
+      >
+        <!-- online wifi -->
+        <svg v-if="isOnline" viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
+          <path
+            d="M12 18.5a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Z"
+            fill="currentColor"
+          />
+          <path
+            d="M8.5 14.2a5.2 5.2 0 0 1 7 0M5.5 11a9.2 9.2 0 0 1 13 0M2.8 7.8a13.2 13.2 0 0 1 18.4 0"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+          />
+        </svg>
+        <!-- offline wifi -->
+        <svg v-else viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
+          <path
+            d="M12 18.5a1.25 1.25 0 1 0 0-2.5 1.25 1.25 0 0 0 0 2.5Z"
+            fill="currentColor"
+          />
+          <path
+            d="M8.5 14.2a5.2 5.2 0 0 1 7 0M5.5 11c1.2-1.1 2.7-1.9 4.3-2.3M18.5 11c-.7-.6-1.5-1.1-2.3-1.5M2.8 7.8c1.4-1.2 3-2.1 4.7-2.7M21.2 7.8c-1.2-1-2.5-1.8-4-2.3M4 4l16 16"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+          />
+        </svg>
+      </span>
+      <p v-if="!isOnline" class="offline-message">حالت آفلاین — صفحه از کش نمایش داده می‌شود</p>
+    </div>
+
     <section class="login-card" aria-labelledby="login-title">
       <div class="brand">
         <img :src="appIcon" alt="لوگوی اپ" width="64" height="64" />
         <h1 id="login-title">ورود به حساب</h1>
-        <p class="subtitle">این صفحه برای استفاده آفلاین کش می‌شود. (نسخه ۰.۰.۴)</p>
       </div>
 
-      <!-- ورود بیومتریک: دکمه تصویری اثرانگشت -->
       <div v-if="showBiometricButton" class="biometric-hero">
         <button
           type="button"
@@ -48,17 +83,9 @@
               stroke-width="1.6"
               stroke-linecap="round"
             />
-            <path
-              d="M17.8 9.2V9c0-3.1-2.6-5.6-5.8-5.6"
-              stroke="currentColor"
-              stroke-width="1.6"
-              stroke-linecap="round"
-              opacity="0.55"
-            />
           </svg>
         </button>
         <p class="biometric-status">{{ biometricStatusText }}</p>
-        <p class="biometric-hint">کاربر: «{{ biometricUsername }}»</p>
       </div>
 
       <div v-if="showBiometricButton" class="divider" aria-hidden="true"><span>یا ورود با رمز</span></div>
@@ -95,14 +122,6 @@
           {{ isSubmitting ? 'در حال ورود...' : 'ورود' }}
         </button>
       </form>
-
-      <p v-if="webAuthnSupported === false" class="biometric-hint muted">
-        این مرورگر از WebAuthn پشتیبانی نمی‌کند.
-      </p>
-
-      <p class="offline-hint" :data-online="isOnline">
-        {{ isOnline ? 'اتصال اینترنت برقرار است' : 'حالت آفلاین — صفحه از کش نمایش داده می‌شود' }}
-      </p>
     </section>
   </main>
 </template>
@@ -205,7 +224,6 @@ function onBiometricLogin() {
     return
   }
 
-  // get را فوراً شروع کن تا user-gesture حفظ شود
   const assertPromise = getPlatformAssertion({
     challenge: options.challengeBuffer,
     allowCredentialIds: options.allowCredentialIds,
@@ -260,6 +278,7 @@ onUnmounted(() => {
 
 <style scoped>
 .login-page {
+  position: relative;
   height: 100dvh;
   max-height: 100dvh;
   overflow: hidden;
@@ -270,6 +289,37 @@ onUnmounted(() => {
     radial-gradient(ellipse at 20% 10%, rgba(56, 189, 248, 0.18), transparent 50%),
     radial-gradient(ellipse at 80% 90%, rgba(99, 102, 241, 0.16), transparent 45%),
     #0f172a;
+}
+
+.connection-bar {
+  position: absolute;
+  top: 0.75rem;
+  inset-inline: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.wifi-icon {
+  color: #38bdf8;
+  display: inline-flex;
+  opacity: 0.9;
+}
+
+.wifi-icon.offline {
+  color: #f87171;
+}
+
+.offline-message {
+  margin: 0;
+  color: #f87171;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-align: center;
+  padding-inline: 1rem;
 }
 
 .login-card {
@@ -302,12 +352,6 @@ onUnmounted(() => {
   color: #f8fafc;
 }
 
-.subtitle {
-  margin: 0.4rem 0 0;
-  color: #94a3b8;
-  font-size: 0.88rem;
-}
-
 .biometric-hero {
   display: grid;
   justify-items: center;
@@ -328,12 +372,6 @@ onUnmounted(() => {
   place-items: center;
   cursor: pointer;
   box-shadow: 0 10px 28px rgba(14, 165, 233, 0.2);
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
-}
-
-.fingerprint-btn:hover:not(:disabled) {
-  transform: translateY(-1px) scale(1.02);
-  box-shadow: 0 14px 32px rgba(14, 165, 233, 0.28);
 }
 
 .fingerprint-btn.busy {
@@ -350,11 +388,9 @@ onUnmounted(() => {
   0%,
   100% {
     transform: scale(1);
-    box-shadow: 0 10px 28px rgba(251, 191, 36, 0.18);
   }
   50% {
     transform: scale(1.05);
-    box-shadow: 0 14px 36px rgba(251, 191, 36, 0.32);
   }
 }
 
@@ -364,17 +400,6 @@ onUnmounted(() => {
   color: #e0f2fe;
   font-size: 0.92rem;
   font-weight: 600;
-}
-
-.biometric-hint {
-  margin: 0;
-  text-align: center;
-  color: #94a3b8;
-  font-size: 0.78rem;
-}
-
-.biometric-hint.muted {
-  margin-top: 0.85rem;
 }
 
 .divider {
@@ -445,16 +470,5 @@ onUnmounted(() => {
   margin: 0;
   color: #fda4af;
   font-size: 0.88rem;
-}
-
-.offline-hint {
-  margin: 1rem 0 0;
-  text-align: center;
-  font-size: 0.8rem;
-  color: #64748b;
-}
-
-.offline-hint[data-online='false'] {
-  color: #fbbf24;
 }
 </style>
