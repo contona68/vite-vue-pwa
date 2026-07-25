@@ -82,8 +82,8 @@ export async function apiHasCredentials(username) {
   return hasCredentialsSync(username)
 }
 
-export async function apiGetRegistrationOptions(username) {
-  await delay()
+/** نسخه sync برای حفظ user-gesture قبل از credentials.create/get */
+export function apiPrepareRegistrationOptionsSync(username) {
   const key = normalizeUsername(username)
   if (!key) {
     throw new Error('نام کاربری برای ثبت Passkey الزامی است.')
@@ -94,7 +94,6 @@ export async function apiGetRegistrationOptions(username) {
   const challengeBuffer = createRandomChallenge()
   const challenge = bufferToBase64UrlSafe(challengeBuffer)
 
-  // localStorage مقاوم‌تر از sessionStorage هنگام دیالوگ بیومتریک اندروید
   localStorage.setItem(
     PENDING_REG_KEY,
     JSON.stringify({
@@ -109,10 +108,48 @@ export async function apiGetRegistrationOptions(username) {
     challengeBuffer,
     user: {
       id: key,
-      name: username.trim(),
-      displayName: username.trim(),
+      name: String(username).trim(),
+      displayName: String(username).trim(),
     },
     excludeCredentialIds: existing.map((item) => item.credentialId),
+  }
+}
+
+export async function apiGetRegistrationOptions(username) {
+  await delay()
+  return apiPrepareRegistrationOptionsSync(username)
+}
+
+export function apiPrepareAuthenticationOptionsSync(username) {
+  const key = normalizeUsername(username)
+  if (!key) {
+    throw new Error('نام کاربری برای ورود با اثرانگشت الزامی است.')
+  }
+
+  const store = readStore()
+  const list = store.users[key]?.credentials || []
+  if (list.length === 0) {
+    throw new Error('برای این کاربر Passkey ثبت نشده است.')
+  }
+
+  const challengeBuffer = createRandomChallenge()
+  const challenge = bufferToBase64UrlSafe(challengeBuffer)
+  const allowCredentialIds = list.map((item) => item.credentialId)
+
+  localStorage.setItem(
+    PENDING_AUTH_KEY,
+    JSON.stringify({
+      username: key,
+      challenge,
+      allowCredentialIds,
+      createdAt: Date.now(),
+    }),
+  )
+
+  return {
+    challenge,
+    challengeBuffer,
+    allowCredentialIds,
   }
 }
 
@@ -171,36 +208,7 @@ export async function apiVerifyRegistration(username, attestation) {
 
 export async function apiGetAuthenticationOptions(username) {
   await delay()
-  const key = normalizeUsername(username)
-  if (!key) {
-    throw new Error('نام کاربری برای ورود با اثرانگشت الزامی است.')
-  }
-
-  const store = readStore()
-  const list = store.users[key]?.credentials || []
-  if (list.length === 0) {
-    throw new Error('برای این کاربر Passkey ثبت نشده است.')
-  }
-
-  const challengeBuffer = createRandomChallenge()
-  const challenge = bufferToBase64UrlSafe(challengeBuffer)
-  const allowCredentialIds = list.map((item) => item.credentialId)
-
-  localStorage.setItem(
-    PENDING_AUTH_KEY,
-    JSON.stringify({
-      username: key,
-      challenge,
-      allowCredentialIds,
-      createdAt: Date.now(),
-    }),
-  )
-
-  return {
-    challenge,
-    challengeBuffer,
-    allowCredentialIds,
-  }
+  return apiPrepareAuthenticationOptionsSync(username)
 }
 
 export async function apiVerifyAuthentication(username, assertion) {

@@ -111,8 +111,8 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  apiGetAuthenticationOptions,
   apiHasCredentials,
+  apiPrepareAuthenticationOptionsSync,
   apiVerifyAuthentication,
   getPreferredWebAuthnUsername,
   setLastWebAuthnUsername,
@@ -189,7 +189,7 @@ async function onSubmit() {
   }
 }
 
-async function onBiometricLogin() {
+function onBiometricLogin() {
   errorMessage.value = ''
   const targetUser = biometricUsername.value
   if (!targetUser) {
@@ -197,33 +197,42 @@ async function onBiometricLogin() {
     return
   }
 
+  let options
+  try {
+    options = apiPrepareAuthenticationOptionsSync(targetUser)
+  } catch (error) {
+    errorMessage.value = error?.message || 'آماده‌سازی ورود بیومتریک ناموفق بود.'
+    return
+  }
+
+  // get را فوراً شروع کن تا user-gesture حفظ شود
+  const assertPromise = getPlatformAssertion({
+    challenge: options.challengeBuffer,
+    allowCredentialIds: options.allowCredentialIds,
+  })
+
   isBiometricSubmitting.value = true
 
-  try {
-    const options = await apiGetAuthenticationOptions(targetUser)
-    const assertion = await getPlatformAssertion({
-      challenge: options.challengeBuffer,
-      allowCredentialIds: options.allowCredentialIds,
+  assertPromise
+    .then((assertion) => apiVerifyAuthentication(targetUser, assertion))
+    .then((result) => {
+      if (!result.ok) {
+        throw new Error('تأیید اثرانگشت ناموفق بود.')
+      }
+      completeLogin(result.username)
+      return router.replace({ name: 'home' })
     })
-
-    const result = await apiVerifyAuthentication(targetUser, assertion)
-    if (!result.ok) {
-      errorMessage.value = 'تأیید اثرانگشت ناموفق بود.'
-      return
-    }
-
-    completeLogin(result.username)
-    await router.replace({ name: 'home' })
-  } catch (error) {
-    console.warn('[WebAuthn] login failed:', error)
-    if (error?.name === 'NotAllowedError') {
-      errorMessage.value = 'احراز هویت بیومتریک لغو شد یا حسگر پاسخ نداد.'
-    } else {
-      errorMessage.value = error?.message || 'ورود با اثرانگشت ممکن نشد.'
-    }
-  } finally {
-    isBiometricSubmitting.value = false
-  }
+    .catch((error) => {
+      console.warn('[WebAuthn] login failed:', error)
+      if (error?.name === 'NotAllowedError') {
+        errorMessage.value = 'احراز هویت بیومتریک لغو شد یا حسگر پاسخ نداد.'
+      } else {
+        errorMessage.value = error?.message || 'ورود با اثرانگشت ممکن نشد.'
+      }
+    })
+    .finally(() => {
+      isBiometricSubmitting.value = false
+    })
 }
 
 onMounted(async () => {

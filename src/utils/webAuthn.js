@@ -80,12 +80,12 @@ export async function createPlatformCredential({
     authenticatorSelection: {
       authenticatorAttachment: 'platform',
       userVerification: 'preferred',
-      residentKey: 'preferred',
     },
     timeout: 120_000,
     attestation: 'none',
   }
 
+  // excludeCredentials را فقط در صورت نیاز می‌گذاریم؛ روی بعضی اندرویدها مشکل‌ساز است
   if (excludeCredentialIds.length > 0) {
     publicKey.excludeCredentials = excludeCredentialIds.map((id) => ({
       type: 'public-key',
