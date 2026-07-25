@@ -19,6 +19,12 @@ const routes = [
     meta: { title: 'تأیید پیامکی', public: true },
   },
   {
+    path: '/biometric-enroll',
+    name: 'biometric-enroll',
+    component: () => import('@/views/BiometricEnrollView.vue'),
+    meta: { title: 'فعال‌سازی اثرانگشت', requiresAuth: true },
+  },
+  {
     path: '/home',
     name: 'home',
     component: () => import('@/views/HomeView.vue'),
@@ -56,6 +62,9 @@ router.beforeEach((to) => {
   if (to.name === 'login' && isLoggedIn()) {
     return { name: 'home' }
   }
+
+  // صفحه فعال‌سازی فقط برای کاربر لاگین‌شده بدون Passkey قبلی معنا دارد
+  // (خودِ صفحه هم در صورت داشتن credential به home می‌فرستد)
 
   return true
 })

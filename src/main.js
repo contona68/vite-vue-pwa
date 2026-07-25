@@ -19,6 +19,23 @@ async function setupPwa() {
   }
 
   const { registerSW } = await import('virtual:pwa-register')
+
+  const ONE_HOUR_MS = 60 * 60 * 1000
+  let isCheckingUpdate = false
+
+  async function checkForUpdate(registration) {
+    if (!registration || isCheckingUpdate) return
+    isCheckingUpdate = true
+    try {
+      await registration.update()
+      console.info('[PWA] Checked for service worker update')
+    } catch (error) {
+      console.warn('[PWA] Update check failed:', error)
+    } finally {
+      isCheckingUpdate = false
+    }
+  }
+
   const updateSW = registerSW({
     immediate: true,
     onNeedRefresh() {
@@ -27,10 +44,13 @@ async function setupPwa() {
     onRegisteredSW(swUrl, registration) {
       if (!registration) return
 
-      // هر ساعت یک‌بار نسخه جدید را چک می‌کند
+      // یک‌بار هنگام ثبت
+      checkForUpdate(registration)
+
+      // بعد از آن دقیقاً هر ۱ ساعت، یک‌بار
       window.setInterval(() => {
-        registration.update()
-      }, 60 * 60 * 1000)
+        checkForUpdate(registration)
+      }, ONE_HOUR_MS)
 
       console.info('[PWA] Service Worker registered:', swUrl)
     },
