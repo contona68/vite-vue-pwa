@@ -103,6 +103,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
+  clearPwaInstalledFlag,
   incrementDismissLoadCount,
   isAndroidDevice,
   isIosDevice,
@@ -117,8 +118,8 @@ import { APP_ICON_192 } from '@/utils/publicUrl'
 import { appConfig } from '@/services/appConfig.service'
 import { needRefresh } from '@/pwa/updateState'
 
-/** فقط برای دسکتاپ بدون beforeinstallprompt؛ اندروید صبر می‌کند تا رویداد نصب بیاید */
-const MANUAL_GUIDE_DELAY_MS = 2500
+/** دسکتاپ / اندروید بدون BIP: راهنمای دستی بعد از این تأخیر */
+const MANUAL_GUIDE_DELAY_MS = 3500
 
 const appIcon = APP_ICON_192
 const visible = ref(false)
@@ -137,6 +138,7 @@ let deferredPrompt = null
 let alreadyInstalled = false
 let nativeInstallReady = false
 let manualGuideTimer = null
+let listenersBound = false
 
 function canShowBanner() {
   // بنر آپدیت اولویت دارد؛ رویداد نصب را نگه می‌داریم تا بعد از بستن آپدیت نشان دهیم
@@ -184,11 +186,21 @@ function clearManualGuideTimer() {
   manualGuideTimer = null
 }
 
+function scheduleManualGuideFallback() {
+  clearManualGuideTimer()
+  manualGuideTimer = window.setTimeout(() => {
+    manualGuideTimer = null
+    if (nativeInstallReady || deferredPrompt || visible.value) return
+    showManualGuideBanner()
+  }, MANUAL_GUIDE_DELAY_MS)
+}
+
 async function onBeforeInstallPrompt(event) {
   event.preventDefault()
 
-  // اگر از قبل نصب است، بنر را نشان نده
-  if (await refreshInstalledState()) return
+  // خود رویداد یعنی مرورگر نصب را ممکن می‌داند → فلگ کهنه را پاک کن
+  clearPwaInstalledFlag()
+  alreadyInstalled = false
 
   deferredPrompt = event
   nativeInstallReady = true
@@ -240,6 +252,36 @@ async function install() {
   }
 }
 
+async function restoreBannerAfterUpdate() {
+  if (deferredPrompt) {
+    showNativeInstallBanner()
+    return
+  }
+  if (onIos) {
+    await showManualGuideBanner()
+  }
+}
+
+function bindInstallListeners() {
+  if (listenersBound) return
+  listenersBound = true
+  window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt)
+  window.addEventListener('appinstalled', onAppInstalled)
+  standaloneMedia.addEventListener('change', onDisplayModeChange)
+  fullscreenMedia.addEventListener('change', onDisplayModeChange)
+  minimalUiMedia.addEventListener('change', onDisplayModeChange)
+}
+
+function unbindInstallListeners() {
+  if (!listenersBound) return
+  listenersBound = false
+  window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt)
+  window.removeEventListener('appinstalled', onAppInstalled)
+  standaloneMedia.removeEventListener('change', onDisplayModeChange)
+  fullscreenMedia.removeEventListener('change', onDisplayModeChange)
+  minimalUiMedia.removeEventListener('change', onDisplayModeChange)
+}
+
 const standaloneMedia = window.matchMedia('(display-mode: standalone)')
 const fullscreenMedia = window.matchMedia('(display-mode: fullscreen)')
 const minimalUiMedia = window.matchMedia('(display-mode: minimal-ui)')
@@ -249,48 +291,30 @@ watch(needRefresh, (updating) => {
     hideBanner()
     return
   }
-  if (deferredPrompt) {
-    showNativeInstallBanner()
-  }
+  restoreBannerAfterUpdate()
 })
 
 onMounted(async () => {
+  // اول listener — روی موبایل BIP زود می‌آید و با await از دست می‌رود
+  bindInstallListeners()
+
   if (await refreshInstalledState()) return
 
   incrementDismissLoadCount()
 
-  window.addEventListener('beforeinstallprompt', onBeforeInstallPrompt)
-  window.addEventListener('appinstalled', onAppInstalled)
-  standaloneMedia.addEventListener('change', onDisplayModeChange)
-  fullscreenMedia.addEventListener('change', onDisplayModeChange)
-  minimalUiMedia.addEventListener('change', onDisplayModeChange)
-
-  // iOS: رویداد نصب ندارد → راهنمای Share (فقط اگر هنوز نصب نشده)
+  // iOS: رویداد نصب ندارد → راهنمای Share
   if (onIos) {
     await showManualGuideBanner()
     return
   }
 
-  // اندروید: فقط بنر native؛ رویداد گاهی دیر می‌آید و تایمر اشتباه راهنما را نشان می‌داد
-  if (onAndroid) {
-    return
-  }
-
-  // دسکتاپ بدون beforeinstallprompt → بعد از تأخیر، فقط اگر واقعاً نصب نباشد
-  manualGuideTimer = window.setTimeout(() => {
-    manualGuideTimer = null
-    if (nativeInstallReady || deferredPrompt || visible.value) return
-    showManualGuideBanner()
-  }, MANUAL_GUIDE_DELAY_MS)
+  // اندروید و دسکتاپ: صبر برای BIP؛ اگر نیامد راهنمای دستی
+  scheduleManualGuideFallback()
 })
 
 onUnmounted(() => {
   clearManualGuideTimer()
-  window.removeEventListener('beforeinstallprompt', onBeforeInstallPrompt)
-  window.removeEventListener('appinstalled', onAppInstalled)
-  standaloneMedia.removeEventListener('change', onDisplayModeChange)
-  fullscreenMedia.removeEventListener('change', onDisplayModeChange)
-  minimalUiMedia.removeEventListener('change', onDisplayModeChange)
+  unbindInstallListeners()
 })
 </script>
 

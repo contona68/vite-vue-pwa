@@ -60,12 +60,18 @@ function isRelatedWebAppInstalled(relatedApps) {
 
 /**
  * آیا PWA از قبل روی دستگاه نصب است؟
- * موبایل + دسکتاپ: standalone، فلگ محلی، getInstalledRelatedApps
+ * iOS: فقط حالت standalone (فلگ localStorage در Safari گمراه‌کننده است)
+ * اندروید/دسکتاپ: standalone + getInstalledRelatedApps + فلگ محلی
  */
 export async function isPwaAlreadyInstalled() {
   if (isStandaloneMode()) {
     markPwaInstalled()
     return true
+  }
+
+  // روی iOS نصب یعنی از Home Screen باز شده؛ در تب مرورگر همیشه قابل‌نصب است
+  if (isIosDevice()) {
+    return false
   }
 
   if ('getInstalledRelatedApps' in navigator) {
