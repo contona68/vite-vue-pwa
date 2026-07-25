@@ -2,6 +2,8 @@
  * WebAuthn — فقط برای قفل محلی اثرانگشت (بدون ارسال به سرور)
  */
 
+import { isAndroidDevice, isIosDevice } from '@/utils/device'
+
 function bufferToBase64Url(buffer) {
   const bytes = new Uint8Array(buffer)
   let binary = ''
@@ -37,8 +39,8 @@ export function isWebAuthnSupported() {
 }
 
 /**
- * آیا حسگر بیومتریک پلتفرم (اثرانگشت/Face) روی دستگاه آماده است؟
- * تعداد اثرانگشت را نمی‌گوید؛ فقط در دسترس بودن تقریبی.
+ * آیا بیومتریک پلتفرم در دسترس است؟
+ * وب نوع حسگر (اثرانگشت در برابر چهره) را دقیق نمی‌گوید.
  */
 export async function isPlatformBiometricAvailable() {
   if (!isWebAuthnSupported()) return false
@@ -50,6 +52,24 @@ export async function isPlatformBiometricAvailable() {
   } catch (_) {
     return false
   }
+}
+
+/**
+ * آیا این دستگاه برای مسیر «اثرانگشت / بیومتریک» مناسب است؟
+ * فقط موبایل (اندروید و iOS) — دسکتاپ خارج است.
+ */
+export function isFingerprintDeviceCandidate() {
+  if (!isWebAuthnSupported()) return false
+  return isAndroidDevice() || isIosDevice()
+}
+
+/**
+ * دستگاه واقعاً برای درخواست اثرانگشت آماده است
+ * (کاندید اثرانگشت + بیومتریک پلتفرم در دسترس)
+ */
+export async function isFingerprintReadyToPrompt() {
+  if (!isFingerprintDeviceCandidate()) return false
+  return isPlatformBiometricAvailable()
 }
 
 export function createRandomChallenge(byteLength = 32) {
@@ -82,7 +102,8 @@ export async function createPlatformCredential({
     ],
     authenticatorSelection: {
       authenticatorAttachment: 'platform',
-      userVerification: 'preferred',
+      userVerification: 'required',
+      residentKey: 'discouraged',
     },
     timeout: 120_000,
     attestation: 'none',
@@ -104,7 +125,7 @@ export async function getPlatformAssertion({ challenge, allowCredentialIds = [] 
   const publicKey = {
     challenge,
     timeout: 120_000,
-    userVerification: 'preferred',
+    userVerification: 'required',
     rpId: getRpId(),
   }
 

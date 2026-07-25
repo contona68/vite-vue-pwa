@@ -28,7 +28,9 @@
           <li v-if="canShowAppLockToggle">
             <div class="feature-text">
               <strong>قفل اثرانگشت</strong>
-              <span>با روشن بودن، دفعه بعد برای باز کردن برنامه اثرانگشت می‌خواهیم.</span>
+              <span>
+                ترجیح حساب؛ روی دستگاه‌هایی که اثرانگشت دارند، هنگام باز کردن برنامه درخواست می‌شود.
+              </span>
             </div>
             <label class="switch">
               <input
@@ -67,8 +69,7 @@ import {
 import {
   disableAppLock,
   enableAppLock,
-  isAppLockEnabled,
-  isAppLockSupported,
+  checkAppLockSettingEnabled,
 } from '@/utils/appLock'
 import { getTokenUsername } from '@/utils/auth'
 
@@ -104,15 +105,13 @@ const successMessage = ref('')
 
 const sourceFeatures = computed(() => appConfig.value.features)
 
-const canShowAppLockToggle = computed(
-  () => isFeatureEnabled('appLock') && isAppLockSupported(),
-)
+const canShowAppLockToggle = computed(() => isFeatureEnabled('appLock'))
 
 function syncDraftFromConfig() {
   featureItems.forEach(({ key }) => {
     draftFeatures[key] = Boolean(sourceFeatures.value?.[key])
   })
-  draftAppLockEnabled.value = isAppLockEnabled(getTokenUsername())
+  draftAppLockEnabled.value = checkAppLockSettingEnabled(getTokenUsername())
   dirty.value = false
 }
 

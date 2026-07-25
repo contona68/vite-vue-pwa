@@ -1,17 +1,15 @@
-import { apiValidateToken } from '@/api/authApi'
-import { isAppLockEnabled } from '@/utils/appLock'
-import { isFeatureEnabled } from '@/services/appConfig.service'
 import {
-  clearTokenSession,
-  getAccessToken,
-  getTokenUsername,
-  hasPendingLogin,
-  markSessionUnlocked,
-} from '@/utils/auth'
+  checkLoginByToken,
+  openAuthenticatedSession,
+  shouldShowAppLockGate,
+} from '@/services/session.service'
+import { hasPendingLogin, isSessionUnlocked } from '@/utils/auth'
+import { isFeatureEnabled } from '@/services/appConfig.service'
 import { isBrowserOnline } from '@/utils/network'
 
 /**
- * تصمیم مسیر شروع اپ بعد از لود کانفیگ
+ * تصمیم مسیر شروع اپ
+ * ترتیب: توکن → (در صورت نیاز قفل اثرانگشت) → خانه
  * @returns {Promise<string>} route name
  */
 export async function resolveBootRouteName() {
@@ -23,27 +21,18 @@ export async function resolveBootRouteName() {
     return isFeatureEnabled('otp') ? 'otp' : 'login'
   }
 
-  const token = getAccessToken()
-  if (!token) {
+  // هر بار با توکن چک می‌شود
+  const login = await checkLoginByToken()
+  if (!login.ok) {
+    // توکن نیست یا منقضی → فرم لاگین
     return 'login'
   }
 
-  const username = getTokenUsername()
-  const lockEnabledInSettings =
-    isFeatureEnabled('appLock') && isAppLockEnabled(username)
-
-  // قفل در تنظیمات روشن → صفحه ورود تصمیم اثرانگشت/مودال/فرم را می‌گیرد
-  if (lockEnabledInSettings) {
+  // توکن معتبر؛ اگر قفل اثرانگشت لازم است و این نشست هنوز آنلاک نشده
+  if (shouldShowAppLockGate(login.username) && !isSessionUnlocked()) {
     return 'login'
   }
 
-  // قفل خاموش → بدون فرم؛ فقط اعتبارسنجی توکن
-  const result = await apiValidateToken(token)
-  if (!result.ok) {
-    clearTokenSession()
-    return 'login'
-  }
-
-  markSessionUnlocked()
+  openAuthenticatedSession()
   return 'home'
 }

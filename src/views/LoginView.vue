@@ -127,24 +127,24 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { apiValidateToken } from '@/api/authApi'
 import {
-  isAppLockEnabled,
-  resolveAppLockEntry,
+  checkAppLockBiometricEnrolled,
   unlockWithBiometric,
 } from '@/utils/appLock'
 import {
   beginPendingLogin,
-  clearTokenSession,
-  getAccessToken,
-  getTokenUsername,
   isLoggedIn,
   isSessionUnlocked,
-  markSessionUnlocked,
 } from '@/utils/auth'
 import { appConfig, isFeatureEnabled } from '@/services/appConfig.service'
 import { useConnectivity } from '@/services/connectivity.service'
 import { completeTokenLogin } from '@/services/login.service'
+import {
+  checkLoginByToken,
+  openAuthenticatedSession,
+  performLogout,
+  shouldShowAppLockGate,
+} from '@/services/session.service'
 import { APP_ICON_192 } from '@/utils/publicUrl'
 
 const appIcon = APP_ICON_192
@@ -188,19 +188,9 @@ watch(isOnline, async (online) => {
   }
 })
 
-async function continueWithTokenCheck() {
-  const token = getAccessToken()
-  if (!token) return false
-
-  const result = await apiValidateToken(token)
-  if (!result.ok) {
-    clearTokenSession()
-    return false
-  }
-
-  markSessionUnlocked()
+async function goHomeAuthenticated() {
+  openAuthenticatedSession()
   await router.replace({ name: 'home' })
-  return true
 }
 
 async function onSubmit() {
@@ -244,30 +234,25 @@ function onUnlock() {
     return
   }
 
-  const token = getAccessToken()
-  if (!token) {
-    forcePasswordForm.value = true
-    showUnlockUi.value = false
-    return
-  }
-
   const unlockPromise = unlockWithBiometric()
   isUnlocking.value = true
   unlockStatus.value = 'انگشت خود را روی حسگر قرار دهید...'
 
   unlockPromise
     .then(async () => {
+      // اثرانگشت فقط قفل است؛ لاگین بودن با توکن چک می‌شود
       unlockStatus.value = 'در حال بررسی نشست...'
-      const result = await apiValidateToken(token)
-      if (!result.ok) {
-        clearTokenSession()
-        forcePasswordForm.value = true
+      const login = await checkLoginByToken()
+      if (!login.ok) {
         showUnlockUi.value = false
-        errorMessage.value = 'نشست منقضی شده است. دوباره وارد شوید.'
+        forcePasswordForm.value = true
+        errorMessage.value =
+          login.reason === 'expired'
+            ? 'نشست منقضی شده است. دوباره وارد شوید.'
+            : 'نشست معتبر نیست. دوباره وارد شوید.'
         return
       }
-      markSessionUnlocked()
-      await router.replace({ name: 'home' })
+      await goHomeAuthenticated()
     })
     .catch((error) => {
       if (error?.name === 'NotAllowedError') {
@@ -282,9 +267,10 @@ function onUnlock() {
 }
 
 function usePasswordInstead() {
+  // معادل خروج از قفل و ورود مجدد با فرم
   showNoBiometricModal.value = false
   showUnlockUi.value = false
-  clearTokenSession()
+  performLogout()
   forcePasswordForm.value = true
   errorMessage.value = ''
 }
@@ -298,8 +284,8 @@ async function triggerUnlockAutomatically() {
 }
 
 /**
- * ۱ تنظیمات → ۲ پشتیبانی دستگاه → ۳ وجود اثرانگشت
- * قفل خاموش + توکن → فقط apiValidateToken (بدون فرم)
+ * توکن = لاگین پایدار
+ * اثرانگشت = فقط قفل (اگر خروج نزده باشد و شرایط برقرار باشد)
  */
 async function prepareEntryFlow() {
   isResolvingGate.value = true
@@ -317,37 +303,33 @@ async function prepareEntryFlow() {
       return
     }
 
-    const token = getAccessToken()
-    if (!token || isSessionUnlocked()) {
-      return
-    }
-
-    // قابلیت محصول خاموش یا کاربر قفل را فعال نکرده → فقط چک توکن
-    if (!isFeatureEnabled('appLock') || !isAppLockEnabled(getTokenUsername())) {
-      await continueWithTokenCheck()
-      return
-    }
-
-    const entry = await resolveAppLockEntry(getTokenUsername())
-
-    if (entry === 'none') {
-      await continueWithTokenCheck()
-      return
-    }
-
-    if (entry === 'password') {
-      // شرط ۱/۲ رد شد → فرم لاگین (مرحله ۳ چک نشده)
+    // هر بار وضعیت لاگین با توکن چک می‌شود
+    const login = await checkLoginByToken()
+    if (!login.ok) {
+      // بدون توکن یا منقضی → فرم لاگین
       forcePasswordForm.value = true
       return
     }
 
-    if (entry === 'modal') {
-      // ۱ و ۲ اوکی، ۳ نه
+    // توکن معتبر؛ اگر قبلاً در این نشست آنلاک شده → خانه
+    if (isSessionUnlocked()) {
+      await goHomeAuthenticated()
+      return
+    }
+
+    // قفل اثرانگشت فقط وقتی شرایط باشد (خروج نزده = توکن هست)
+    if (!shouldShowAppLockGate(login.username)) {
+      await goHomeAuthenticated()
+      return
+    }
+
+    // مرحله ۳ اختصاصی: اثرانگشت روی دستگاه ثبت شده؟
+    const enrolled = await checkAppLockBiometricEnrolled()
+    if (!enrolled) {
       showNoBiometricModal.value = true
       return
     }
 
-    // هر سه اوکی → اثرانگشت، بعد چک توکن
     showUnlockUi.value = true
     await triggerUnlockAutomatically()
   } finally {

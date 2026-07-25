@@ -5,6 +5,16 @@
       <RouterLink :to="{ name: 'home' }">خانه</RouterLink>
       <RouterLink :to="{ name: 'about' }">درباره</RouterLink>
       <RouterLink v-if="loggedIn" :to="{ name: 'feature-settings' }">تنظیمات</RouterLink>
+      <!-- TEMP: فقط برای تست انقضای توکن — بعداً حذف شود -->
+      <button
+        v-if="loggedIn"
+        type="button"
+        class="test-expire-btn"
+        title="تست: منقضی کردن توکن"
+        @click="expireTokenForTest"
+      >
+        انقضای توکن
+      </button>
       <button v-if="loggedIn" type="button" class="logout-btn" @click="onLogout">
         خروج
       </button>
@@ -16,8 +26,9 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { isLoggedIn, logout } from '@/utils/auth'
+import { isLoggedIn } from '@/utils/auth'
 import { appConfig } from '@/services/appConfig.service'
+import { performLogout } from '@/services/session.service'
 
 const router = useRouter()
 const route = useRoute()
@@ -28,8 +39,29 @@ const loggedIn = computed(() => {
 const brandName = computed(() => appConfig.value.branding.appName)
 
 async function onLogout() {
-  logout()
+  performLogout()
   await router.push({ name: 'login' })
+}
+
+/** TEMP — فقط UI تست؛ منطق اصلی auth را تغییر نمی‌دهد */
+async function expireTokenForTest() {
+  const metaKey = 'auth_token_meta'
+  const unlockKey = 'auth_session_unlocked'
+  try {
+    const raw = localStorage.getItem(metaKey)
+    const meta = raw ? JSON.parse(raw) : {}
+    localStorage.setItem(
+      metaKey,
+      JSON.stringify({
+        ...meta,
+        expiresAt: Date.now() - 1000,
+      }),
+    )
+  } catch (_) {
+    // ignore
+  }
+  sessionStorage.removeItem(unlockKey)
+  await router.push({ name: 'boot' })
 }
 </script>
 
@@ -57,7 +89,8 @@ async function onLogout() {
 }
 
 .links a,
-.logout-btn {
+.logout-btn,
+.test-expire-btn {
   color: #cbd5e1;
   text-decoration: none;
   font-size: 0.95rem;
@@ -75,5 +108,14 @@ async function onLogout() {
 
 .logout-btn:hover {
   color: #f8fafc;
+}
+
+.test-expire-btn {
+  color: #fbbf24;
+  font-size: 0.82rem;
+}
+
+.test-expire-btn:hover {
+  color: #fde68a;
 }
 </style>

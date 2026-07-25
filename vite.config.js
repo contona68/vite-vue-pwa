@@ -50,7 +50,7 @@ export default defineConfig({
         display: 'standalone',
         orientation: 'any',
         scope: './',
-        start_url: './login',
+        start_url: './',
         prefer_related_applications: false,
         // برای تشخیص نصب روی موبایل و دسکتاپ (getInstalledRelatedApps)
         related_applications: [

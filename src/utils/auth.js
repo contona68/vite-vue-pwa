@@ -1,6 +1,9 @@
 /**
  * نشست و توکن احراز هویت
- * توکن پایدار در localStorage؛ باز بودن قفل اپ در sessionStorage
+ *
+ * - توکن در localStorage = لاگین پایدار (تا خروج یا انقضا)
+ * - آنلاک در sessionStorage = باز بودن قفل اثرانگشت در این اجرای اپ
+ * - خروج (logout) = پاک کردن توکن + سیشن + pending
  */
 
 const TOKEN_KEY = 'auth_access_token'

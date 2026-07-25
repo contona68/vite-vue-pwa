@@ -1,8 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { hasPendingLogin, hasStoredToken, isLoggedIn, isSessionUnlocked } from '@/utils/auth'
-import { isAppLockEnabled, getAppLockUsername } from '@/utils/appLock'
 import { appConfig, isFeatureEnabled } from '@/services/appConfig.service'
 import { isBrowserOnline } from '@/utils/network'
+import { shouldShowAppLockGate } from '@/services/session.service'
 
 const routes = [
   {
@@ -65,12 +65,7 @@ router.beforeEach((to) => {
 
   if (to.meta.requiresAuth && !isLoggedIn()) {
     if (hasPendingLogin() && isFeatureEnabled('otp')) return { name: 'otp' }
-    if (
-      hasStoredToken() &&
-      isFeatureEnabled('appLock') &&
-      isAppLockEnabled(getAppLockUsername()) &&
-      !isSessionUnlocked()
-    ) {
+    if (hasStoredToken() && shouldShowAppLockGate() && !isSessionUnlocked()) {
       return { name: 'login' }
     }
     if (hasStoredToken() && !isSessionUnlocked()) {
